@@ -1,0 +1,19 @@
+{
+  "input": "scans/**/*.{tif,tiff,jpg,jpeg,png,webp}",
+  "outputDir": "converted",
+  "profile": "generic-color",
+  "format": "jpeg",
+  "quality": 92,
+  "maxDimension": null,
+  "overwrite": false,
+  "auto": {
+    "filmBase": true,
+    "flare": true,
+    "exposure": false,
+    "whiteBalance": false
+  },
+  "naming": {
+    "suffix": "-positive"
+  },
+  "settings": {}
+}
