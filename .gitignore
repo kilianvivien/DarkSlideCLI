@@ -5,4 +5,5 @@ coverage/
 # Keep local planning and generated documentation out of git.
 docs/*
 !docs/cli-reference.md
+!docs/image-quality-baseline.md
 !docs/release-checklist.md

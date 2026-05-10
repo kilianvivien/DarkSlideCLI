@@ -210,6 +210,8 @@ Project layout:
 
 Release readiness is tracked in [docs/release-checklist.md](docs/release-checklist.md). The package is intentionally private while the config schema and JSON contract tests are still roadmap items.
 
+Image-quality regression coverage is documented in [docs/image-quality-baseline.md](docs/image-quality-baseline.md).
+
 ## Roadmap
 
 Near-term priorities are config schema validation, profile listing, JSON summary contract tests, deterministic image-quality fixtures, release packaging, and CI. RAW import, sidecars, richer color management, and concurrent batch processing should be added as separate milestones after the current CLI contract is protected by tests.

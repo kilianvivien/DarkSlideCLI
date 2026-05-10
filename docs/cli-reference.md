@@ -451,3 +451,5 @@ pending /absolute/input-03.tif -> /absolute/output/input-03-positive.jpg
 ## Current Boundaries
 
 The current CLI supports TIFF, JPEG, PNG, and WebP input. RAW import, sidecars, metadata embedding, advanced color-profile controls, and concurrent processing are roadmap items and are not part of the current command surface.
+
+Image-quality regression coverage and the manual comparison workflow are documented in [image-quality-baseline.md](image-quality-baseline.md).
