@@ -223,6 +223,16 @@ Exit codes:
 
 For AI agents, prefer `--dry-run --json` before large conversion jobs. It confirms input matching, output naming, skip behavior, and config validity without writing images.
 
+## AI Agent Skill
+
+This repo includes ready-to-use agent skill instructions for DarkSlide CLI:
+
+- [skills/darkslide-cli/SKILL.md](skills/darkslide-cli/SKILL.md): canonical Codex-compatible skill with frontmatter, workflow guidance, and references.
+- [.skill/SKILL.md](.skill/SKILL.md): generic repo-local entrypoint for agents that look for a `.skill` folder.
+- [skills/darkslide-cli/references/cli-contract.md](skills/darkslide-cli/references/cli-contract.md): detailed command, config, JSON summary, and safe-template reference.
+
+Agents should discover profiles/defaults first, run `--dry-run --json` before real batch conversion, and parse the JSON summary instead of scraping human output.
+
 The config schema is published at [schemas/darkslide-config.schema.json](schemas/darkslide-config.schema.json). Available profiles can be inspected with `darkslide-convert --list-profiles --json`, and the built-in defaults can be printed with `darkslide-convert --print-default-config`.
 
 Batch conversion defaults to `concurrency: 1`. Higher concurrency preserves final JSON ordering and keeps per-file errors in the summary.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DarkSlide CLI"
+  short_description: "Guide agents through DarkSlide CLI conversions"
+  default_prompt: "Use $darkslide-cli to plan and run a safe film-negative conversion."
