@@ -29,6 +29,7 @@
     "dryRun": { "type": "boolean" },
     "json": { "type": "boolean" },
     "concurrency": { "type": "integer", "minimum": 1 },
+    "saveSidecar": { "type": "boolean" },
     "auto": {
       "type": "object",
       "additionalProperties": false,

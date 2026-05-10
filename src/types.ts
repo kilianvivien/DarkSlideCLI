@@ -25,6 +25,7 @@ export interface CliConfig {
   dryRun: boolean;
   json: boolean;
   concurrency: number;
+  saveSidecar: boolean;
   auto: CliAutoConfig;
   naming: CliNamingConfig;
   settings: Partial<ConversionSettings>;
@@ -33,6 +34,7 @@ export interface CliConfig {
 export interface CliFileResult {
   inputPath: string;
   outputPath: string;
+  sidecarPath?: string;
   status: FileStatus;
   width: number | null;
   height: number | null;
@@ -69,6 +71,7 @@ export interface ParsedArgs {
   dryRun?: boolean;
   json?: boolean;
   concurrency?: number;
+  saveSidecar?: boolean;
   help?: boolean;
   listProfiles?: boolean;
   printDefaultConfig?: boolean;

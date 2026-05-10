@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -23,6 +23,7 @@ function createTestConfig(overrides: Partial<CliConfig>): CliConfig {
     dryRun: false,
     json: true,
     concurrency: 1,
+    saveSidecar: false,
     auto: {
       filmBase: true,
       flare: false,
@@ -143,6 +144,103 @@ describe('processor', () => {
 
     expect(summary.files[0]?.status).toBe('pending');
     expect(summary.totals).toEqual({ matched: 1, done: 0, skipped: 1, failed: 0 });
+  });
+
+  it('writes JSON sidecars with reproducibility fields', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-sidecar-'));
+    const input = path.join(dir, 'negative.png');
+    await sharp({
+      create: {
+        width: 8,
+        height: 6,
+        channels: 4,
+        background: { r: 220, g: 150, b: 80, alpha: 1 },
+      },
+    }).png().toFile(input);
+
+    const summary = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out'),
+      saveSidecar: true,
+      settings: {
+        filmBaseSample: { r: 220, g: 150, b: 80 },
+      },
+    }));
+    const sidecarPath = summary.files[0]?.sidecarPath;
+    const sidecar = JSON.parse(await readFile(sidecarPath ?? '', 'utf8')) as {
+      generator: { name: string; version: string };
+      sourceFile: { name: string; path: string; relativePath: string; dimensions: { width: number; height: number } };
+      outputFile: { path: string; dimensions: { width: number; height: number } };
+      profile: { id: string; name: string };
+      settings: { filmBaseSample: { r: number; g: number; b: number } };
+      auto: { warnings: string[] };
+      output: { format: string; quality: number; maxDimension: number | null };
+    };
+
+    expect(summary.files[0]?.status).toBe('done');
+    expect(sidecarPath).toBe(`${summary.files[0]?.outputPath}.json`);
+    expect(sidecar.generator).toEqual({ name: '@darkslide/cli', version: '0.1.0' });
+    expect(sidecar.sourceFile.name).toBe('negative.png');
+    expect(sidecar.sourceFile.path).toBe(input);
+    expect(sidecar.sourceFile.relativePath).toBe(path.relative(process.cwd(), input));
+    expect(sidecar.sourceFile.dimensions).toEqual({ width: 8, height: 6 });
+    expect(sidecar.outputFile.path).toBe(summary.files[0]?.outputPath);
+    expect(sidecar.outputFile.dimensions).toEqual({ width: 8, height: 6 });
+    expect(sidecar.profile).toMatchObject({ id: 'generic-color', name: 'Generic Color' });
+    expect(sidecar.settings.filmBaseSample).toEqual({ r: 220, g: 150, b: 80 });
+    expect(sidecar.auto.warnings).toEqual([]);
+    expect(sidecar.output).toEqual({ format: 'png', quality: 92, maxDimension: null });
+  });
+
+  it('reports planned sidecar paths during dry runs', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-sidecar-dry-'));
+    const input = path.join(dir, 'negative.png');
+    await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 4,
+        background: { r: 220, g: 150, b: 80, alpha: 1 },
+      },
+    }).png().toFile(input);
+
+    const summary = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out'),
+      dryRun: true,
+      saveSidecar: true,
+    }));
+
+    expect(summary.files[0]?.status).toBe('pending');
+    expect(summary.files[0]?.sidecarPath).toBe(`${summary.files[0]?.outputPath}.json`);
+    await expect(readFile(summary.files[0]?.sidecarPath ?? '', 'utf8')).rejects.toThrow();
+  });
+
+  it('reports sidecar writing failures clearly', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-sidecar-fail-'));
+    const input = path.join(dir, 'negative.png');
+    const outputDir = path.join(dir, 'out');
+    await mkdir(outputDir);
+    await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 4,
+        background: { r: 220, g: 150, b: 80, alpha: 1 },
+      },
+    }).png().toFile(input);
+    const plannedOutput = path.join(outputDir, 'negative-positive.png');
+    await mkdir(`${plannedOutput}.json`);
+
+    const summary = await runConversion(createTestConfig({
+      input: [input],
+      outputDir,
+      saveSidecar: true,
+    }));
+
+    expect(summary.files[0]?.status).toBe('error');
+    expect(summary.files[0]?.sidecarPath).toBe(`${plannedOutput}.json`);
+    expect(summary.files[0]?.error).toMatch(/Sidecar could not be written/i);
   });
 
   it('keeps concurrent summary ordering deterministic', async () => {

@@ -7,6 +7,7 @@
   "maxDimension": null,
   "overwrite": false,
   "concurrency": 1,
+  "saveSidecar": false,
   "auto": {
     "filmBase": true,
     "flare": true,

@@ -28,6 +28,7 @@ describe('CLI config', () => {
       '85',
       '--concurrency',
       '3',
+      '--save-sidecar',
       '--overwrite',
       '--json',
     ]);
@@ -40,6 +41,7 @@ describe('CLI config', () => {
     expect(config.format).toBe('jpeg');
     expect(config.quality).toBe(85);
     expect(config.concurrency).toBe(3);
+    expect(config.saveSidecar).toBe(true);
     expect(config.overwrite).toBe(true);
     expect(config.json).toBe(true);
   });
@@ -90,6 +92,26 @@ describe('CLI config', () => {
     });
 
     await expect(loadCliConfig(parseArgs(['--config', configPath]))).rejects.toThrow(/concurrency/i);
+  });
+
+  it('supports disabling sidecars from CLI overrides', async () => {
+    const configPath = await writeJsonConfig({
+      input: 'scan.tif',
+      saveSidecar: true,
+    });
+
+    const config = await loadCliConfig(parseArgs(['--config', configPath, '--no-sidecar']));
+
+    expect(config.saveSidecar).toBe(false);
+  });
+
+  it('rejects invalid sidecar config values', async () => {
+    const configPath = await writeJsonConfig({
+      input: 'scan.tif',
+      saveSidecar: 'yes',
+    });
+
+    await expect(loadCliConfig(parseArgs(['--config', configPath]))).rejects.toThrow(/saveSidecar/i);
   });
 
   it('rejects empty outputDir and profile values', async () => {

@@ -34,6 +34,7 @@ function createQualityConfig(overrides: Partial<CliConfig>): CliConfig {
     dryRun: false,
     json: true,
     concurrency: 1,
+    saveSidecar: false,
     auto: {
       filmBase: false,
       flare: false,

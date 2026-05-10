@@ -42,6 +42,8 @@ Options:
       --dry-run                Print planned work without writing
       --json                   Print deterministic JSON summary
       --concurrency <n>        Process up to n files at once
+      --save-sidecar           Write JSON sidecars next to outputs
+      --no-sidecar             Disable JSON sidecar writing
       --list-profiles          Print available film profiles
       --print-default-config   Print the default JSON config
 ```
@@ -105,6 +107,12 @@ Process up to four files at once while preserving final summary order:
 
 ```bash
 npm run dev -- --input "scans/**/*.tif" --output converted --concurrency 4 --json
+```
+
+Write JSON sidecars next to completed outputs:
+
+```bash
+npm run dev -- --input "scans/**/*.tif" --output converted --save-sidecar
 ```
 
 Resize the longest output edge:
@@ -192,6 +200,10 @@ Supported output formats:
 
 `--concurrency <n>`: Processes up to this many files at once. The value must be a positive integer. The default is `1`; final summary ordering remains sorted by input path even when processing concurrently.
 
+`--save-sidecar`: Writes a JSON sidecar beside each completed output image. Sidecars use the output image path plus `.json`, such as `frame-01-positive.jpg.json`.
+
+`--no-sidecar`: Disables sidecar writing when a config file sets `saveSidecar` to true.
+
 `--list-profiles`: Prints available film profiles and exits successfully without requiring inputs. In human mode, each line includes id, name, type, film type, category, and description. With `--json`, stdout contains a deterministic object with a `profiles` array.
 
 `--print-default-config`: Prints the default JSON config and exits successfully without requiring inputs.
@@ -212,6 +224,7 @@ Start from `darkslide.config.example.json`.
   "maxDimension": null,
   "overwrite": false,
   "concurrency": 1,
+  "saveSidecar": false,
   "auto": {
     "filmBase": true,
     "flare": true,
@@ -239,6 +252,7 @@ Top-level fields:
 - `dryRun`: optional boolean. Same behavior as `--dry-run`.
 - `json`: optional boolean. Same behavior as `--json`.
 - `concurrency`: positive integer. Defaults to `1`.
+- `saveSidecar`: boolean. When true, completed conversions write JSON sidecars next to output images.
 - `auto`: optional object controlling analysis helpers.
 - `naming`: optional object controlling output names.
 - `settings`: optional partial conversion settings object merged over the selected profile defaults.
@@ -284,6 +298,8 @@ Effective config is built in this order:
 For booleans, `--overwrite` sets `overwrite` to true and `--no-overwrite` sets it to false. `--dry-run` and `--json` set their fields to true; there is no current CLI flag to force either back to false when a config file sets it to true.
 
 Concurrent and sequential runs produce the same final result ordering. Failures are captured per file and do not stop unrelated files.
+
+`--save-sidecar` sets `saveSidecar` to true. `--no-sidecar` sets it to false.
 
 ## Output Names
 
@@ -344,6 +360,7 @@ Per-file fields:
 
 - `inputPath`: absolute input file path.
 - `outputPath`: absolute planned or written output file path.
+- `sidecarPath`: present when sidecars are enabled; absolute planned or written sidecar path.
 - `status`: `pending`, `done`, `skipped`, or `error`.
 - `width`: decoded input width for completed files, otherwise `null`.
 - `height`: decoded input height for completed files, otherwise `null`.
@@ -366,6 +383,7 @@ Done result:
 {
   "inputPath": "/absolute/path/scans/frame-01.tif",
   "outputPath": "/absolute/path/converted/frame-01-positive.jpg",
+  "sidecarPath": "/absolute/path/converted/frame-01-positive.jpg.json",
   "status": "done",
   "width": 4000,
   "height": 6000,
@@ -398,6 +416,7 @@ Pending dry-run result:
 {
   "inputPath": "/absolute/path/scans/frame-03.tif",
   "outputPath": "/absolute/path/converted/frame-03-positive.jpg",
+  "sidecarPath": "/absolute/path/converted/frame-03-positive.jpg.json",
   "status": "pending",
   "width": null,
   "height": null,
@@ -443,6 +462,61 @@ Error result:
   ]
 }
 ```
+
+## Sidecar JSON
+
+When `saveSidecar` is true, completed files get a JSON sidecar at `<outputPath>.json`.
+
+```json
+{
+  "version": 1,
+  "generator": {
+    "name": "@darkslide/cli",
+    "version": "0.1.0"
+  },
+  "sourceFile": {
+    "name": "frame-01.tif",
+    "path": "/absolute/path/scans/frame-01.tif",
+    "relativePath": "scans/frame-01.tif",
+    "size": 123456,
+    "dimensions": {
+      "width": 4000,
+      "height": 6000
+    }
+  },
+  "outputFile": {
+    "name": "frame-01-positive.jpg",
+    "path": "/absolute/path/converted/frame-01-positive.jpg",
+    "relativePath": "converted/frame-01-positive.jpg",
+    "dimensions": {
+      "width": 2400,
+      "height": 3600
+    }
+  },
+  "profile": {
+    "id": "generic-color",
+    "name": "Generic Color",
+    "type": "color",
+    "filmType": "negative",
+    "category": "Generic"
+  },
+  "settings": {},
+  "auto": {
+    "filmBase": true,
+    "flare": true,
+    "exposure": false,
+    "whiteBalance": false,
+    "warnings": []
+  },
+  "output": {
+    "format": "jpeg",
+    "quality": 92,
+    "maxDimension": 2400
+  }
+}
+```
+
+Sidecars include both absolute and current-working-directory-relative paths. Metadata embedding is intentionally separate and is not modified by sidecar writing.
 
 ## Human Output
 

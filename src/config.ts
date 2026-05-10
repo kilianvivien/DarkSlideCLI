@@ -18,6 +18,7 @@ const TOP_LEVEL_CONFIG_FIELDS = new Set([
   'dryRun',
   'json',
   'concurrency',
+  'saveSidecar',
   'auto',
   'naming',
   'settings',
@@ -70,6 +71,7 @@ export const DEFAULT_CONFIG: CliConfig = {
   dryRun: false,
   json: false,
   concurrency: 1,
+  saveSidecar: false,
   auto: {
     filmBase: true,
     flare: true,
@@ -159,6 +161,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (arg === '--concurrency') {
       parsed.concurrency = parseInteger(readFlagValue(argv, index, arg), arg);
       index += 1;
+    } else if (arg === '--save-sidecar') {
+      parsed.saveSidecar = true;
+    } else if (arg === '--no-sidecar') {
+      parsed.saveSidecar = false;
     } else if (arg === '--list-profiles') {
       parsed.listProfiles = true;
     } else if (arg === '--print-default-config') {
@@ -414,7 +420,7 @@ function validateConfigFileShape(config: RawConfig) {
     }
     validateMaxDimension(object.maxDimension as number | null);
   }
-  for (const field of ['overwrite', 'dryRun', 'json']) {
+  for (const field of ['overwrite', 'dryRun', 'json', 'saveSidecar']) {
     if (field in object) {
       assertBoolean(object[field], field);
     }
@@ -477,6 +483,7 @@ export async function loadCliConfig(args: ParsedArgs): Promise<CliConfig> {
     dryRun: args.dryRun ?? fileConfig.dryRun ?? DEFAULT_CONFIG.dryRun,
     json: args.json ?? fileConfig.json ?? DEFAULT_CONFIG.json,
     concurrency: validateConcurrency(args.concurrency ?? fileConfig.concurrency ?? DEFAULT_CONFIG.concurrency),
+    saveSidecar: args.saveSidecar ?? fileConfig.saveSidecar ?? DEFAULT_CONFIG.saveSidecar,
     auto: {
       ...DEFAULT_CONFIG.auto,
       ...(fileConfig.auto ?? {}),
@@ -528,6 +535,8 @@ export function getHelpText() {
     '      --dry-run                Print planned work without writing',
     '      --json                   Print deterministic JSON summary',
     '      --concurrency <n>        Process up to n files at once',
+    '      --save-sidecar           Write JSON sidecars next to outputs',
+    '      --no-sidecar             Disable JSON sidecar writing',
     '      --list-profiles          Print available film profiles',
     '      --print-default-config   Print the default JSON config',
   ].join('\n');

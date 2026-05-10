@@ -92,6 +92,7 @@ Start from `darkslide.config.example.json`:
   "maxDimension": null,
   "overwrite": false,
   "concurrency": 1,
+  "saveSidecar": false,
   "auto": {
     "filmBase": true,
     "flare": true,
@@ -137,6 +138,8 @@ Options:
       --dry-run                Print planned work without writing
       --json                   Print deterministic JSON summary
       --concurrency <n>        Process up to n files at once
+      --save-sidecar           Write JSON sidecars next to outputs
+      --no-sidecar             Disable JSON sidecar writing
       --list-profiles          Print available film profiles
       --print-default-config   Print the default JSON config
 ```
@@ -161,9 +164,10 @@ See [docs/cli-reference.md](docs/cli-reference.md) for every current flag, confi
   },
   "files": [
     {
-      "inputPath": "/absolute/path/scans/frame-01.tif",
-      "outputPath": "/absolute/path/converted/frame-01-positive.jpg",
-      "status": "done",
+        "inputPath": "/absolute/path/scans/frame-01.tif",
+        "outputPath": "/absolute/path/converted/frame-01-positive.jpg",
+        "sidecarPath": "/absolute/path/converted/frame-01-positive.jpg.json",
+        "status": "done",
       "width": 4000,
       "height": 6000,
       "outputWidth": 4000,
@@ -186,6 +190,8 @@ For AI agents, prefer `--dry-run --json` before large conversion jobs. It confir
 The config schema is published at [schemas/darkslide-config.schema.json](schemas/darkslide-config.schema.json). Available profiles can be inspected with `darkslide-convert --list-profiles --json`, and the built-in defaults can be printed with `darkslide-convert --print-default-config`.
 
 Batch conversion defaults to `concurrency: 1`. Higher concurrency preserves final JSON ordering and keeps per-file errors in the summary.
+
+Set `saveSidecar: true` or pass `--save-sidecar` to write a JSON sidecar beside each completed output. Dry runs include planned `sidecarPath` values without writing sidecar files.
 
 ## Development
 

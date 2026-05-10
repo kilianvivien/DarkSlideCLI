@@ -24,6 +24,9 @@ import { estimateFilmBaseSampleFromRgba } from './vendor/utils/rawImport.js';
 import type { CliConfig, CliFileResult, CliRunSummary } from './types.js';
 import type { ConversionSettings, FilmProfile, HistogramData } from './vendor/types.js';
 
+const GENERATOR_NAME = '@darkslide/cli';
+const GENERATOR_VERSION = '0.1.0';
+
 export interface RawImage {
   data: Uint8ClampedArray;
   width: number;
@@ -80,6 +83,10 @@ function resolveSettings(profile: FilmProfile, config: CliConfig): ConversionSet
     ? cloneSettings(profile.defaultSettings)
     : createDefaultSettings();
   return mergeObjects(baseSettings, config.settings);
+}
+
+function createSidecarPath(outputPath: string) {
+  return `${outputPath}.json`;
 }
 
 async function decodeImage(inputPath: string): Promise<RawImage> {
@@ -319,6 +326,59 @@ async function encodeImage(image: RawImage, config: CliConfig): Promise<{ data: 
   };
 }
 
+async function writeSidecarFile(inputPath: string, outputPath: string, sidecarPath: string, config: CliConfig, profile: FilmProfile, source: RawImage, output: { width: number; height: number }, settings: ConversionSettings, warnings: string[], sourceSize: number) {
+  const sidecar = {
+    version: 1,
+    generator: {
+      name: GENERATOR_NAME,
+      version: GENERATOR_VERSION,
+    },
+    sourceFile: {
+      name: path.basename(inputPath),
+      path: path.resolve(inputPath),
+      relativePath: path.relative(process.cwd(), inputPath),
+      size: sourceSize,
+      dimensions: {
+        width: source.width,
+        height: source.height,
+      },
+    },
+    outputFile: {
+      name: path.basename(outputPath),
+      path: path.resolve(outputPath),
+      relativePath: path.relative(process.cwd(), outputPath),
+      dimensions: {
+        width: output.width,
+        height: output.height,
+      },
+    },
+    profile: {
+      id: profile.id,
+      name: profile.name,
+      type: profile.type,
+      filmType: profile.filmType ?? 'negative',
+      category: profile.category ?? 'Generic',
+    },
+    settings,
+    auto: {
+      ...config.auto,
+      warnings,
+    },
+    output: {
+      format: config.format,
+      quality: config.quality,
+      maxDimension: config.maxDimension,
+    },
+  };
+
+  try {
+    await writeFile(sidecarPath, `${JSON.stringify(sidecar, null, 2)}\n`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Sidecar could not be written to ${sidecarPath}: ${detail}`);
+  }
+}
+
 export async function processImageFile(inputPath: string, outputPath: string, config: CliConfig, profile: FilmProfile = resolveProfile(config.profile)): Promise<CliFileResult> {
   const warnings: string[] = [];
   const file = await stat(inputPath);
@@ -374,9 +434,15 @@ export async function processImageFile(inputPath: string, outputPath: string, co
     await writeFile(outputPath, encoded.data);
   }
 
+  const sidecarPath = config.saveSidecar ? createSidecarPath(outputPath) : undefined;
+  if (sidecarPath && !config.dryRun) {
+    await writeSidecarFile(inputPath, outputPath, sidecarPath, config, profile, decoded, encoded, settings, warnings, file.size);
+  }
+
   return {
     inputPath,
     outputPath,
+    ...(sidecarPath ? { sidecarPath } : {}),
     status: 'done',
     width: decoded.width,
     height: decoded.height,
@@ -395,10 +461,12 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
   const files = new Array<CliFileResult>(inputPaths.length);
   const processInput = async (inputPath: string): Promise<CliFileResult> => {
     const outputPath = createOutputPath(inputPath, config);
+    const sidecarPath = config.saveSidecar ? createSidecarPath(outputPath) : undefined;
     if (await shouldSkipExisting(outputPath, config.overwrite)) {
       return {
         inputPath,
         outputPath,
+        ...(sidecarPath ? { sidecarPath } : {}),
         status: 'skipped',
         width: null,
         height: null,
@@ -413,6 +481,7 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
       return {
         inputPath,
         outputPath,
+        ...(sidecarPath ? { sidecarPath } : {}),
         status: 'pending',
         width: null,
         height: null,
@@ -429,6 +498,7 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
       return {
         inputPath,
         outputPath,
+        ...(sidecarPath ? { sidecarPath } : {}),
         status: 'error',
         width: null,
         height: null,
