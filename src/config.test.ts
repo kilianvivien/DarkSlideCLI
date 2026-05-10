@@ -29,6 +29,11 @@ describe('CLI config', () => {
       '--concurrency',
       '3',
       '--save-sidecar',
+      '--input-profile',
+      'display-p3',
+      '--output-profile',
+      'adobe-rgb',
+      '--no-embed-output-profile',
       '--overwrite',
       '--json',
     ]);
@@ -42,6 +47,11 @@ describe('CLI config', () => {
     expect(config.quality).toBe(85);
     expect(config.concurrency).toBe(3);
     expect(config.saveSidecar).toBe(true);
+    expect(config.colorManagement).toEqual({
+      inputProfileId: 'display-p3',
+      outputProfileId: 'adobe-rgb',
+      embedOutputProfile: false,
+    });
     expect(config.overwrite).toBe(true);
     expect(config.json).toBe(true);
   });
@@ -112,6 +122,19 @@ describe('CLI config', () => {
     });
 
     await expect(loadCliConfig(parseArgs(['--config', configPath]))).rejects.toThrow(/saveSidecar/i);
+  });
+
+  it('rejects unsupported color profile ids', async () => {
+    expect(() => parseArgs(['--input', 'scan.tif', '--output-profile', 'prophoto'])).toThrow(/outputProfileId/i);
+
+    const configPath = await writeJsonConfig({
+      input: 'scan.tif',
+      colorManagement: {
+        inputProfileId: 'prophoto',
+      },
+    });
+
+    await expect(loadCliConfig(parseArgs(['--config', configPath]))).rejects.toThrow(/colorManagement\.inputProfileId/i);
   });
 
   it('rejects empty outputDir and profile values', async () => {

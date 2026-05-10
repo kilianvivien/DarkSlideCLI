@@ -24,6 +24,11 @@ function createTestConfig(overrides: Partial<CliConfig>): CliConfig {
     json: true,
     concurrency: 1,
     saveSidecar: false,
+    colorManagement: {
+      inputProfileId: 'srgb',
+      outputProfileId: 'srgb',
+      embedOutputProfile: true,
+    },
     auto: {
       filmBase: true,
       flare: false,
@@ -175,6 +180,7 @@ describe('processor', () => {
       settings: { filmBaseSample: { r: number; g: number; b: number } };
       auto: { warnings: string[] };
       output: { format: string; quality: number; maxDimension: number | null };
+      colorManagement: { inputProfileId: string; outputProfileId: string; embedOutputProfile: boolean };
     };
 
     expect(summary.files[0]?.status).toBe('done');
@@ -190,6 +196,145 @@ describe('processor', () => {
     expect(sidecar.settings.filmBaseSample).toEqual({ r: 220, g: 150, b: 80 });
     expect(sidecar.auto.warnings).toEqual([]);
     expect(sidecar.output).toEqual({ format: 'png', quality: 92, maxDimension: null });
+    expect(sidecar.colorManagement).toEqual({ inputProfileId: 'srgb', outputProfileId: 'srgb', embedOutputProfile: true });
+  });
+
+  it('reports color management in summaries and sidecars', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-color-'));
+    const input = path.join(dir, 'negative.png');
+    await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 4,
+        background: { r: 220, g: 150, b: 80, alpha: 1 },
+      },
+    }).png().toFile(input);
+
+    const summary = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out'),
+      saveSidecar: true,
+      colorManagement: {
+        inputProfileId: 'srgb',
+        outputProfileId: 'display-p3',
+        embedOutputProfile: false,
+      },
+    }));
+    const sidecar = JSON.parse(await readFile(summary.files[0]?.sidecarPath ?? '', 'utf8')) as {
+      colorManagement: { inputProfileId: string; outputProfileId: string; embedOutputProfile: boolean };
+    };
+
+    expect(summary.colorManagement).toEqual({
+      inputProfileId: 'srgb',
+      outputProfileId: 'display-p3',
+      embedOutputProfile: false,
+    });
+    expect(sidecar.colorManagement).toEqual(summary.colorManagement);
+  });
+
+  it('changes output pixels for alternate output profiles', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-color-diff-'));
+    const input = path.join(dir, 'negative.png');
+    await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 4,
+        background: { r: 120, g: 80, b: 220, alpha: 1 },
+      },
+    }).png().toFile(input);
+
+    const srgb = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out-srgb'),
+      profile: 'provia-100f',
+      colorManagement: {
+        inputProfileId: 'srgb',
+        outputProfileId: 'srgb',
+        embedOutputProfile: false,
+      },
+    }));
+    const p3 = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out-p3'),
+      profile: 'provia-100f',
+      colorManagement: {
+        inputProfileId: 'srgb',
+        outputProfileId: 'display-p3',
+        embedOutputProfile: false,
+      },
+    }));
+
+    const srgbPixels = await sharp(srgb.files[0]?.outputPath ?? '').raw().toBuffer();
+    const p3Pixels = await sharp(p3.files[0]?.outputPath ?? '').raw().toBuffer();
+
+    expect(Buffer.compare(srgbPixels, p3Pixels)).not.toBe(0);
+  });
+
+  it('embeds output ICC profile metadata when requested', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-color-icc-'));
+    const input = path.join(dir, 'negative.png');
+    await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 4,
+        background: { r: 220, g: 150, b: 80, alpha: 1 },
+      },
+    }).png().toFile(input);
+
+    const embedded = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out-embedded'),
+      colorManagement: {
+        inputProfileId: 'srgb',
+        outputProfileId: 'display-p3',
+        embedOutputProfile: true,
+      },
+    }));
+    const stripped = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out-stripped'),
+      colorManagement: {
+        inputProfileId: 'srgb',
+        outputProfileId: 'display-p3',
+        embedOutputProfile: false,
+      },
+    }));
+
+    await expect(sharp(embedded.files[0]?.outputPath ?? '').metadata()).resolves.toMatchObject({ hasProfile: true });
+    await expect(sharp(stripped.files[0]?.outputPath ?? '').metadata()).resolves.toMatchObject({ hasProfile: false });
+  });
+
+  it('smokes every supported output color profile', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-color-profiles-'));
+    const input = path.join(dir, 'negative.png');
+    await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 4,
+        background: { r: 120, g: 80, b: 220, alpha: 1 },
+      },
+    }).png().toFile(input);
+
+    for (const outputProfileId of ['srgb', 'display-p3', 'adobe-rgb'] as const) {
+      const summary = await runConversion(createTestConfig({
+        input: [input],
+        outputDir: path.join(dir, outputProfileId),
+        profile: 'provia-100f',
+        colorManagement: {
+          inputProfileId: 'srgb',
+          outputProfileId,
+          embedOutputProfile: true,
+        },
+      }));
+
+      expect(summary.files[0]?.status).toBe('done');
+      expect(summary.colorManagement.outputProfileId).toBe(outputProfileId);
+      await expect(sharp(summary.files[0]?.outputPath ?? '').metadata()).resolves.toMatchObject({ hasProfile: true });
+    }
   });
 
   it('reports planned sidecar paths during dry runs', async () => {

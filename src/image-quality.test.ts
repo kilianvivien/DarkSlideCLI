@@ -35,6 +35,11 @@ function createQualityConfig(overrides: Partial<CliConfig>): CliConfig {
     json: true,
     concurrency: 1,
     saveSidecar: false,
+    colorManagement: {
+      inputProfileId: 'srgb',
+      outputProfileId: 'srgb',
+      embedOutputProfile: true,
+    },
     auto: {
       filmBase: false,
       flare: false,

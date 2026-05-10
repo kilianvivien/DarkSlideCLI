@@ -44,6 +44,10 @@ Options:
       --concurrency <n>        Process up to n files at once
       --save-sidecar           Write JSON sidecars next to outputs
       --no-sidecar             Disable JSON sidecar writing
+      --input-profile <id>     srgb, display-p3, or adobe-rgb
+      --output-profile <id>    srgb, display-p3, or adobe-rgb
+      --embed-output-profile   Embed output ICC profile metadata
+      --no-embed-output-profile  Do not embed output ICC profile metadata
       --list-profiles          Print available film profiles
       --print-default-config   Print the default JSON config
 ```
@@ -113,6 +117,12 @@ Write JSON sidecars next to completed outputs:
 
 ```bash
 npm run dev -- --input "scans/**/*.tif" --output converted --save-sidecar
+```
+
+Convert into Display P3 and embed the output ICC profile:
+
+```bash
+npm run dev -- --input "scans/**/*.tif" --output converted --output-profile display-p3 --embed-output-profile
 ```
 
 Resize the longest output edge:
@@ -204,6 +214,14 @@ Supported output formats:
 
 `--no-sidecar`: Disables sidecar writing when a config file sets `saveSidecar` to true.
 
+`--input-profile <id>`: Declares the decoded input RGB profile for the DarkSlide CPU pipeline. Use `srgb`, `display-p3`, or `adobe-rgb`.
+
+`--output-profile <id>`: Converts processed RGB values to the selected output profile. Use `srgb`, `display-p3`, or `adobe-rgb`.
+
+`--embed-output-profile`: Embeds the selected output ICC profile in encoded output metadata where Sharp supports it.
+
+`--no-embed-output-profile`: Converts output RGB values without embedding ICC metadata.
+
 `--list-profiles`: Prints available film profiles and exits successfully without requiring inputs. In human mode, each line includes id, name, type, film type, category, and description. With `--json`, stdout contains a deterministic object with a `profiles` array.
 
 `--print-default-config`: Prints the default JSON config and exits successfully without requiring inputs.
@@ -225,6 +243,11 @@ Start from `darkslide.config.example.json`.
   "overwrite": false,
   "concurrency": 1,
   "saveSidecar": false,
+  "colorManagement": {
+    "inputProfileId": "srgb",
+    "outputProfileId": "srgb",
+    "embedOutputProfile": true
+  },
   "auto": {
     "filmBase": true,
     "flare": true,
@@ -253,6 +276,9 @@ Top-level fields:
 - `json`: optional boolean. Same behavior as `--json`.
 - `concurrency`: positive integer. Defaults to `1`.
 - `saveSidecar`: boolean. When true, completed conversions write JSON sidecars next to output images.
+- `colorManagement.inputProfileId`: `srgb`, `display-p3`, or `adobe-rgb`. Defaults to `srgb`.
+- `colorManagement.outputProfileId`: `srgb`, `display-p3`, or `adobe-rgb`. Defaults to `srgb`.
+- `colorManagement.embedOutputProfile`: boolean. Defaults to `true`.
 - `auto`: optional object controlling analysis helpers.
 - `naming`: optional object controlling output names.
 - `settings`: optional partial conversion settings object merged over the selected profile defaults.
@@ -301,6 +327,8 @@ Concurrent and sequential runs produce the same final result ordering. Failures 
 
 `--save-sidecar` sets `saveSidecar` to true. `--no-sidecar` sets it to false.
 
+`--input-profile`, `--output-profile`, `--embed-output-profile`, and `--no-embed-output-profile` override `colorManagement` config values.
+
 ## Output Names
 
 For each matched input, the CLI:
@@ -321,6 +349,11 @@ With `--json`, stdout contains a single summary object.
   "dryRun": false,
   "profile": "generic-color",
   "format": "jpeg",
+  "colorManagement": {
+    "inputProfileId": "srgb",
+    "outputProfileId": "display-p3",
+    "embedOutputProfile": true
+  },
   "outputDir": "/absolute/path/converted",
   "totals": {
     "matched": 1,
@@ -349,6 +382,7 @@ Top-level fields:
 - `dryRun`: whether the run planned work without writing outputs.
 - `profile`: resolved profile id used by the run.
 - `format`: resolved output format.
+- `colorManagement`: resolved input/output profile ids and ICC embedding behavior.
 - `outputDir`: absolute output directory.
 - `totals.matched`: number of supported files matched after filtering and sorting.
 - `totals.done`: number of successfully written files.
@@ -512,11 +546,16 @@ When `saveSidecar` is true, completed files get a JSON sidecar at `<outputPath>.
     "format": "jpeg",
     "quality": 92,
     "maxDimension": 2400
+  },
+  "colorManagement": {
+    "inputProfileId": "srgb",
+    "outputProfileId": "display-p3",
+    "embedOutputProfile": true
   }
 }
 ```
 
-Sidecars include both absolute and current-working-directory-relative paths. Metadata embedding is intentionally separate and is not modified by sidecar writing.
+Sidecars include both absolute and current-working-directory-relative paths. Metadata embedding is controlled by `colorManagement.embedOutputProfile`; sidecar writing itself does not otherwise alter image metadata.
 
 ## Human Output
 

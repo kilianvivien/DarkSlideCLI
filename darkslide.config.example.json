@@ -8,6 +8,11 @@
   "overwrite": false,
   "concurrency": 1,
   "saveSidecar": false,
+  "colorManagement": {
+    "inputProfileId": "srgb",
+    "outputProfileId": "srgb",
+    "embedOutputProfile": true
+  },
   "auto": {
     "filmBase": true,
     "flare": true,

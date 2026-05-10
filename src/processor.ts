@@ -1,4 +1,5 @@
-import { stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import { createImageData } from './imageData.js';
@@ -19,10 +20,11 @@ import {
   processImageData,
 } from './vendor/utils/imagePipeline.js';
 import { analyzeColorBalance, analyzeExposure } from './vendor/utils/autoAnalysis.js';
+import { getColorProfileIcc } from './vendor/utils/colorProfiles.js';
 import { estimateFlare } from './vendor/utils/flareEstimation.js';
 import { estimateFilmBaseSampleFromRgba } from './vendor/utils/rawImport.js';
 import type { CliConfig, CliFileResult, CliRunSummary } from './types.js';
-import type { ConversionSettings, FilmProfile, HistogramData } from './vendor/types.js';
+import type { ColorProfileId, ConversionSettings, FilmProfile, HistogramData } from './vendor/types.js';
 
 const GENERATOR_NAME = '@darkslide/cli';
 const GENERATOR_VERSION = '0.1.0';
@@ -105,7 +107,6 @@ async function decodeImage(inputPath: string): Promise<RawImage> {
 
   const { data, info } = await sharp(inputPath, { limitInputPixels: MAX_IMAGE_PIXELS })
     .rotate()
-    .toColorspace('srgb')
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -234,17 +235,19 @@ function applyWhiteBalanceAnalysisStage(image: RawImage, settings: ConversionSet
   return imageData;
 }
 
-function processTransformedImage(image: RawImage, settings: ConversionSettings, profile: FilmProfile, highlightDensityEstimate: number, flareFloor: [number, number, number] | null): ProcessedImage {
+function processTransformedImage(image: RawImage, settings: ConversionSettings, profile: FilmProfile, highlightDensityEstimate: number, flareFloor: [number, number, number] | null, config?: Pick<CliConfig, 'colorManagement'>): ProcessedImage {
   const sourceImageData = createImageData(new Uint8ClampedArray(image.data), image.width, image.height);
   const imageData = createImageData(new Uint8ClampedArray(image.data), image.width, image.height);
   const isColor = profile.type === 'color' && !settings.blackAndWhite.enabled;
+  const inputProfileId = config?.colorManagement.inputProfileId ?? 'srgb';
+  const outputProfileId = config?.colorManagement.outputProfileId ?? 'srgb';
   const residualBaseOffset = computeResidualBaseOffset(
     sourceImageData,
     settings,
     isColor,
     profile.filmType ?? 'negative',
-    'srgb',
-    'srgb',
+    inputProfileId,
+    outputProfileId,
     [1, 1, 1],
     flareFloor,
   );
@@ -263,8 +266,8 @@ function processTransformedImage(image: RawImage, settings: ConversionSettings, 
     0,
     0,
     highlightDensityEstimate,
-    'srgb',
-    'srgb',
+    inputProfileId,
+    outputProfileId,
     profile.id,
     profile.filmType ?? 'negative',
     residualBaseOffset,
@@ -284,6 +287,16 @@ export function processRawImage(image: RawImage, settings: ConversionSettings, p
   return processTransformedImage(image, settings, profile, highlightDensityEstimate, flareFloor);
 }
 
+function getSharpIccProfileName(profileId: ColorProfileId) {
+  if (profileId === 'display-p3') {
+    return 'p3';
+  }
+  if (profileId === 'srgb') {
+    return 'srgb';
+  }
+  return null;
+}
+
 async function encodeImage(image: RawImage, config: CliConfig): Promise<{ data: Buffer; width: number; height: number }> {
   let encoder = sharp(Buffer.from(image.data), {
     raw: {
@@ -292,6 +305,7 @@ async function encodeImage(image: RawImage, config: CliConfig): Promise<{ data: 
       channels: 4,
     },
   });
+  let generatedIccPath: string | null = null;
 
   if (config.maxDimension) {
     encoder = encoder.resize({
@@ -318,12 +332,30 @@ async function encodeImage(image: RawImage, config: CliConfig): Promise<{ data: 
       break;
   }
 
-  const { data, info } = await encoder.toBuffer({ resolveWithObject: true });
-  return {
-    data,
-    width: info.width,
-    height: info.height,
-  };
+  if (config.colorManagement.embedOutputProfile) {
+    const builtInProfile = getSharpIccProfileName(config.colorManagement.outputProfileId);
+    if (builtInProfile) {
+      encoder = encoder.withIccProfile(builtInProfile, { attach: true });
+    } else {
+      const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-icc-'));
+      generatedIccPath = path.join(dir, `${config.colorManagement.outputProfileId}.icc`);
+      await writeFile(generatedIccPath, getColorProfileIcc(config.colorManagement.outputProfileId));
+      encoder = encoder.withIccProfile(generatedIccPath, { attach: true });
+    }
+  }
+
+  try {
+    const { data, info } = await encoder.toBuffer({ resolveWithObject: true });
+    return {
+      data,
+      width: info.width,
+      height: info.height,
+    };
+  } finally {
+    if (generatedIccPath) {
+      await rm(path.dirname(generatedIccPath), { force: true, recursive: true });
+    }
+  }
 }
 
 async function writeSidecarFile(inputPath: string, outputPath: string, sidecarPath: string, config: CliConfig, profile: FilmProfile, source: RawImage, output: { width: number; height: number }, settings: ConversionSettings, warnings: string[], sourceSize: number) {
@@ -369,6 +401,9 @@ async function writeSidecarFile(inputPath: string, outputPath: string, sidecarPa
       quality: config.quality,
       maxDimension: config.maxDimension,
     },
+    colorManagement: {
+      ...config.colorManagement,
+    },
   };
 
   try {
@@ -402,7 +437,7 @@ export async function processImageFile(inputPath: string, outputPath: string, co
     : null;
 
   const transformedAnalysis = await transformForPipeline(analysisSource, settings);
-  const firstAnalysis = processTransformedImage(transformedAnalysis, settings, profile, 0, flareFloor);
+  const firstAnalysis = processTransformedImage(transformedAnalysis, settings, profile, 0, flareFloor, config);
   const highlightDensityEstimate = computeHighlightDensity(firstAnalysis.histogram);
 
   if (config.auto.exposure) {
@@ -427,7 +462,7 @@ export async function processImageFile(inputPath: string, outputPath: string, co
   }
 
   const transformed = await transformForPipeline(decoded, settings);
-  const processed = processTransformedImage(transformed, settings, profile, highlightDensityEstimate, flareFloor);
+  const processed = processTransformedImage(transformed, settings, profile, highlightDensityEstimate, flareFloor, config);
   const encoded = await encodeImage(processed, config);
 
   if (!config.dryRun) {
@@ -534,6 +569,9 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
     dryRun: config.dryRun,
     profile: profile.id,
     format: config.format,
+    colorManagement: {
+      ...config.colorManagement,
+    },
     outputDir: path.resolve(config.outputDir),
     totals: {
       matched: orderedFiles.length,

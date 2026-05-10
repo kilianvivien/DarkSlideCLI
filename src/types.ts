@@ -1,4 +1,4 @@
-import type { ConversionSettings } from './vendor/types.js';
+import type { ColorProfileId, ConversionSettings } from './vendor/types.js';
 
 export type CliOutputFormat = 'jpeg' | 'png' | 'webp' | 'tiff';
 export type FileStatus = 'pending' | 'done' | 'skipped' | 'error';
@@ -14,6 +14,12 @@ export interface CliNamingConfig {
   suffix: string;
 }
 
+export interface CliColorManagementConfig {
+  inputProfileId: ColorProfileId;
+  outputProfileId: ColorProfileId;
+  embedOutputProfile: boolean;
+}
+
 export interface CliConfig {
   input: string[];
   outputDir: string;
@@ -26,6 +32,7 @@ export interface CliConfig {
   json: boolean;
   concurrency: number;
   saveSidecar: boolean;
+  colorManagement: CliColorManagementConfig;
   auto: CliAutoConfig;
   naming: CliNamingConfig;
   settings: Partial<ConversionSettings>;
@@ -49,6 +56,7 @@ export interface CliRunSummary {
   dryRun: boolean;
   profile: string;
   format: CliOutputFormat;
+  colorManagement: CliColorManagementConfig;
   outputDir: string;
   totals: {
     matched: number;
@@ -72,6 +80,9 @@ export interface ParsedArgs {
   json?: boolean;
   concurrency?: number;
   saveSidecar?: boolean;
+  inputProfileId?: ColorProfileId;
+  outputProfileId?: ColorProfileId;
+  embedOutputProfile?: boolean;
   help?: boolean;
   listProfiles?: boolean;
   printDefaultConfig?: boolean;

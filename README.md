@@ -93,6 +93,11 @@ Start from `darkslide.config.example.json`:
   "overwrite": false,
   "concurrency": 1,
   "saveSidecar": false,
+  "colorManagement": {
+    "inputProfileId": "srgb",
+    "outputProfileId": "srgb",
+    "embedOutputProfile": true
+  },
   "auto": {
     "filmBase": true,
     "flare": true,
@@ -140,6 +145,10 @@ Options:
       --concurrency <n>        Process up to n files at once
       --save-sidecar           Write JSON sidecars next to outputs
       --no-sidecar             Disable JSON sidecar writing
+      --input-profile <id>     srgb, display-p3, or adobe-rgb
+      --output-profile <id>    srgb, display-p3, or adobe-rgb
+      --embed-output-profile   Embed output ICC profile metadata
+      --no-embed-output-profile  Do not embed output ICC profile metadata
       --list-profiles          Print available film profiles
       --print-default-config   Print the default JSON config
 ```
@@ -155,6 +164,11 @@ See [docs/cli-reference.md](docs/cli-reference.md) for every current flag, confi
   "dryRun": false,
   "profile": "generic-color",
   "format": "jpeg",
+  "colorManagement": {
+    "inputProfileId": "srgb",
+    "outputProfileId": "srgb",
+    "embedOutputProfile": true
+  },
   "outputDir": "/absolute/path/converted",
   "totals": {
     "matched": 1,
@@ -192,6 +206,8 @@ The config schema is published at [schemas/darkslide-config.schema.json](schemas
 Batch conversion defaults to `concurrency: 1`. Higher concurrency preserves final JSON ordering and keeps per-file errors in the summary.
 
 Set `saveSidecar: true` or pass `--save-sidecar` to write a JSON sidecar beside each completed output. Dry runs include planned `sidecarPath` values without writing sidecar files.
+
+Set `colorManagement.outputProfileId` or pass `--output-profile` to choose `srgb`, `display-p3`, or `adobe-rgb`; summaries and sidecars report the effective color-management settings.
 
 ## Development
 

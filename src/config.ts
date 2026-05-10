@@ -3,9 +3,10 @@ import path from 'node:path';
 import { UsageError } from './errors.js';
 import { FILM_PROFILES } from './vendor/constants.js';
 import type { CliConfig, CliOutputFormat, ParsedArgs } from './types.js';
-import type { ConversionSettings } from './vendor/types.js';
+import type { ColorProfileId, ConversionSettings } from './vendor/types.js';
 
 const OUTPUT_FORMATS = new Set<CliOutputFormat>(['jpeg', 'png', 'webp', 'tiff']);
+const COLOR_PROFILE_IDS = new Set<ColorProfileId>(['srgb', 'display-p3', 'adobe-rgb']);
 const PROFILE_IDS = new Set(FILM_PROFILES.map((profile) => profile.id));
 const TOP_LEVEL_CONFIG_FIELDS = new Set([
   'input',
@@ -19,11 +20,13 @@ const TOP_LEVEL_CONFIG_FIELDS = new Set([
   'json',
   'concurrency',
   'saveSidecar',
+  'colorManagement',
   'auto',
   'naming',
   'settings',
 ]);
 const AUTO_FIELDS = new Set(['filmBase', 'flare', 'exposure', 'whiteBalance']);
+const COLOR_MANAGEMENT_FIELDS = new Set(['inputProfileId', 'outputProfileId', 'embedOutputProfile']);
 const NAMING_FIELDS = new Set(['suffix']);
 const SETTINGS_FIELDS = new Set([
   'exposure',
@@ -72,6 +75,11 @@ export const DEFAULT_CONFIG: CliConfig = {
   json: false,
   concurrency: 1,
   saveSidecar: false,
+  colorManagement: {
+    inputProfileId: 'srgb',
+    outputProfileId: 'srgb',
+    embedOutputProfile: true,
+  },
   auto: {
     filmBase: true,
     flare: true,
@@ -165,6 +173,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
       parsed.saveSidecar = true;
     } else if (arg === '--no-sidecar') {
       parsed.saveSidecar = false;
+    } else if (arg === '--input-profile') {
+      parsed.inputProfileId = validateColorProfileId(readFlagValue(argv, index, arg), 'inputProfileId');
+      index += 1;
+    } else if (arg === '--output-profile') {
+      parsed.outputProfileId = validateColorProfileId(readFlagValue(argv, index, arg), 'outputProfileId');
+      index += 1;
+    } else if (arg === '--embed-output-profile') {
+      parsed.embedOutputProfile = true;
+    } else if (arg === '--no-embed-output-profile') {
+      parsed.embedOutputProfile = false;
     } else if (arg === '--list-profiles') {
       parsed.listProfiles = true;
     } else if (arg === '--print-default-config') {
@@ -209,6 +227,13 @@ function validateConcurrency(concurrency: number) {
     throw new UsageError('concurrency must be a positive integer.');
   }
   return concurrency;
+}
+
+function validateColorProfileId(value: unknown, label: string): ColorProfileId {
+  if (typeof value !== 'string' || !COLOR_PROFILE_IDS.has(value as ColorProfileId)) {
+    throw new UsageError(`${label} must be srgb, display-p3, or adobe-rgb.`);
+  }
+  return value as ColorProfileId;
 }
 
 function assertPlainObject(value: unknown, label: string): Record<string, unknown> {
@@ -279,6 +304,20 @@ function validateAutoConfig(value: unknown) {
   assertNoUnknownKeys(auto, AUTO_FIELDS, 'auto');
   for (const [key, candidate] of Object.entries(auto)) {
     assertBoolean(candidate, `auto.${key}`);
+  }
+}
+
+function validateColorManagementConfig(value: unknown) {
+  const colorManagement = assertPlainObject(value, 'colorManagement');
+  assertNoUnknownKeys(colorManagement, COLOR_MANAGEMENT_FIELDS, 'colorManagement');
+  if ('inputProfileId' in colorManagement) {
+    validateColorProfileId(colorManagement.inputProfileId, 'colorManagement.inputProfileId');
+  }
+  if ('outputProfileId' in colorManagement) {
+    validateColorProfileId(colorManagement.outputProfileId, 'colorManagement.outputProfileId');
+  }
+  if ('embedOutputProfile' in colorManagement) {
+    assertBoolean(colorManagement.embedOutputProfile, 'colorManagement.embedOutputProfile');
   }
 }
 
@@ -434,6 +473,9 @@ function validateConfigFileShape(config: RawConfig) {
   if ('auto' in object) {
     validateAutoConfig(object.auto);
   }
+  if ('colorManagement' in object) {
+    validateColorManagementConfig(object.colorManagement);
+  }
   if ('naming' in object) {
     validateNamingConfig(object.naming);
   }
@@ -484,6 +526,13 @@ export async function loadCliConfig(args: ParsedArgs): Promise<CliConfig> {
     json: args.json ?? fileConfig.json ?? DEFAULT_CONFIG.json,
     concurrency: validateConcurrency(args.concurrency ?? fileConfig.concurrency ?? DEFAULT_CONFIG.concurrency),
     saveSidecar: args.saveSidecar ?? fileConfig.saveSidecar ?? DEFAULT_CONFIG.saveSidecar,
+    colorManagement: {
+      ...DEFAULT_CONFIG.colorManagement,
+      ...(fileConfig.colorManagement ?? {}),
+      ...(args.inputProfileId ? { inputProfileId: args.inputProfileId } : {}),
+      ...(args.outputProfileId ? { outputProfileId: args.outputProfileId } : {}),
+      ...(args.embedOutputProfile !== undefined ? { embedOutputProfile: args.embedOutputProfile } : {}),
+    },
     auto: {
       ...DEFAULT_CONFIG.auto,
       ...(fileConfig.auto ?? {}),
@@ -537,6 +586,10 @@ export function getHelpText() {
     '      --concurrency <n>        Process up to n files at once',
     '      --save-sidecar           Write JSON sidecars next to outputs',
     '      --no-sidecar             Disable JSON sidecar writing',
+    '      --input-profile <id>     srgb, display-p3, or adobe-rgb',
+    '      --output-profile <id>    srgb, display-p3, or adobe-rgb',
+    '      --embed-output-profile   Embed output ICC profile metadata',
+    '      --no-embed-output-profile  Do not embed output ICC profile metadata',
     '      --list-profiles          Print available film profiles',
     '      --print-default-config   Print the default JSON config',
   ].join('\n');

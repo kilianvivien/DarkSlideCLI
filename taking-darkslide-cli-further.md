@@ -1,5 +1,34 @@
 # Taking DarkSlide CLI Further
 
+## Implementation Status
+
+Last updated after Phase 6 implementation.
+
+Completed:
+
+- Phase 1: Documentation and release readiness.
+- Phase 2: Config schema and agent safety.
+- Phase 3: Image quality baseline.
+- Phase 4: Performance and batch operation, except human/JSONL progress modes.
+- Phase 5: JSON sidecars and reproducibility, except broader image metadata policy.
+- Phase 6: Color management.
+
+Pending:
+
+- Phase 7: RAW and scanner workflows.
+- Phase 8: DarkSlide app interop.
+- Phase 9: Distribution and CI.
+
+Current verification baseline:
+
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+At the time of this update, the suite covers 5 test files and 38 tests.
+
 ## Executive Review
 
 DarkSlide CLI is already a useful v1 batch converter for film-negative workflows. It has a small, understandable TypeScript surface, reuses DarkSlide's CPU conversion pipeline, and exposes an automation-friendly command shape: JSON config in, deterministic per-file summary out.
@@ -14,17 +43,17 @@ The strongest parts of the current project are:
 - A small runtime dependency set: `sharp` for decode/encode/resize and `fast-glob` for input discovery.
 - Existing baseline checks: unit/integration tests with Vitest and strict TypeScript type checking.
 
-The main gaps before this can become a durable, widely usable CLI are:
+The main remaining gaps before this can become a durable, widely usable CLI are:
 
 - No release packaging or CI workflow is defined yet.
-- Config validation is limited and does not have a published JSON Schema.
-- Nested `settings` values are accepted as loose partial objects, which is flexible but risky for agents.
-- The JSON output shape is described in the README but not protected by schema tests.
-- There is no sidecar, metadata, or reproducibility story beyond input/output paths and dimensions.
+- Config validation and a config JSON Schema now exist, but JSON summary output does not yet have a dedicated published schema.
+- Nested `settings` validation is conservative, but additional edge-case tests would still be useful.
+- The JSON output shape is documented and tested through integration tests, but a dedicated summary schema or snapshot suite would make compatibility easier to police.
+- JSON sidecars now exist, but broader image metadata preserve/strip/embed policy is still intentionally limited.
 - RAW formats are explicitly out of scope for v1 and should remain a separate milestone.
-- Batch processing is currently sequential.
-- Image quality regression coverage is still thin and does not yet use representative scan fixtures.
-- The AI-agent contract should be formalized so future features do not break deterministic automation.
+- Batch processing now supports deterministic concurrency, but human progress and JSONL progress are not implemented.
+- Image quality regression coverage now has deterministic synthetic fixtures, but does not yet use committed representative real-scan fixtures.
+- The AI-agent contract is documented for current behavior; future machine-readable changes still need compatibility discipline.
 
 ## Current Architecture
 
@@ -36,21 +65,26 @@ argv
   -> loadCliConfig
   -> runConversion
   -> expandInputs
+  -> ordered worker pool controlled by concurrency
+  -> output and sidecar path planning
   -> processImageFile
+  -> pre-decode file/dimension/pixel guards
   -> sharp decode
   -> optional analysis resize
   -> auto film base / flare / exposure / white balance analysis
-  -> DarkSlide CPU pipeline
+  -> DarkSlide CPU pipeline with color-management ids
   -> sharp encode
+  -> optional ICC embedding
+  -> optional JSON sidecar write
   -> JSON or human summary
 ```
 
 Core modules:
 
 - `src/cli.ts` owns the executable entry point, `ImageData` shim installation, error handling, summary printing, and exit code selection.
-- `src/config.ts` owns argument parsing, config file loading, default config merge, flag override precedence, and basic validation.
+- `src/config.ts` owns argument parsing, config file loading, default config merge, flag override precedence, default config printing, profile listing inputs, and config validation.
 - `src/files.ts` owns glob expansion, supported input filtering, deterministic sorting, sanitized output names, output directory creation, and overwrite checks.
-- `src/processor.ts` owns decode, analysis, transform, crop, pipeline invocation, encode, per-file result construction, and batch summary totals.
+- `src/processor.ts` owns decode, pre-decode guards, analysis, transform, crop, color-managed pipeline invocation, encode, optional ICC embedding, optional sidecar writing, per-file result construction, deterministic concurrency, and batch summary totals.
 - `src/imageData.ts` provides a Node-compatible `ImageData` implementation for DarkSlide pipeline functions that expect browser-style image data.
 - `src/index.ts` exports the public library surface for external consumers or tests.
 - `src/vendor/*` contains DarkSlide-derived constants, film profiles, types, image pipeline utilities, flare estimation, auto analysis, color profile utilities, math helpers, and RAW-adjacent film-base helpers.
@@ -99,13 +133,18 @@ Future machine-readable modes should follow these rules:
 - Use `stderr` for invalid usage and unexpected process-level errors.
 - Consider JSONL only as an additive progress mode, such as `--jsonl-progress`, not a replacement for `--json`.
 
-Recommended stable JSON schema shape:
+Current stable JSON summary shape:
 
 ```json
 {
   "dryRun": false,
   "profile": "generic-color",
   "format": "jpeg",
+  "colorManagement": {
+    "inputProfileId": "srgb",
+    "outputProfileId": "srgb",
+    "embedOutputProfile": true
+  },
   "outputDir": "/absolute/output",
   "totals": {
     "matched": 1,
@@ -117,6 +156,7 @@ Recommended stable JSON schema shape:
     {
       "inputPath": "/absolute/input.tif",
       "outputPath": "/absolute/output/input-positive.jpg",
+      "sidecarPath": "/absolute/output/input-positive.jpg.json",
       "status": "done",
       "width": 4000,
       "height": 6000,
@@ -129,11 +169,11 @@ Recommended stable JSON schema shape:
 }
 ```
 
-Do not claim a formal schema exists until it is added and tested. Treat the example above as the intended target contract.
+The formal schema currently covers config files at `schemas/darkslide-config.schema.json`. A separate JSON summary schema has not been added yet.
 
 ## Step-By-Step Roadmap
 
-### Phase 1: Documentation And Release Readiness
+### Phase 1: Documentation And Release Readiness — Done
 
 Goal: make the existing v1 easy to understand, run, verify, and package.
 
@@ -162,7 +202,14 @@ Acceptance checks:
 - The documented commands match the current scripts and bin name.
 - No future feature is documented as already available.
 
-### Phase 2: Config Schema And Agent Safety
+Implemented notes:
+
+- Added `docs/cli-reference.md`.
+- Added `docs/release-checklist.md`.
+- Linked both from README.
+- Kept the package private while distribution policy remains undecided.
+
+### Phase 2: Config Schema And Agent Safety — Done
 
 Goal: make config files safe for agents to generate and validate before running expensive conversion work.
 
@@ -191,7 +238,15 @@ Acceptance checks:
 - Agents can validate configs before running conversion.
 - `--list-profiles --json` gives enough information to choose a profile without reading source files.
 
-### Phase 3: Image Quality Baseline
+Implemented notes:
+
+- Added `schemas/darkslide-config.schema.json`.
+- Added stricter top-level validation and conservative nested `settings` validation.
+- Added `--list-profiles` and `--print-default-config`.
+- Unknown profiles now fail during config loading as usage/config errors.
+- Documented JSON examples for `done`, `skipped`, `pending`, and `error`.
+
+### Phase 3: Image Quality Baseline — Done
 
 Goal: protect DarkSlide parity and avoid silent conversion regressions.
 
@@ -228,7 +283,18 @@ Acceptance checks:
 - A contributor can tell whether a pipeline change improved quality or merely changed it.
 - The fixture suite stays small enough to run in regular CI.
 
-### Phase 4: Performance And Batch Operation
+Implemented notes:
+
+- Added deterministic synthetic image-quality tests in `src/image-quality.test.ts`.
+- Added `docs/image-quality-baseline.md`.
+- Covered decoded pixel hash, dimensions, channel means, histogram shape, auto analysis toggles, crop, rotation, level angle, black-and-white, slide, and major film profile smoke tests.
+
+Not yet done:
+
+- No committed real-scan fixture set.
+- No perceptual visual-diff workflow in CI.
+
+### Phase 4: Performance And Batch Operation — Mostly Done
 
 Goal: improve throughput while keeping deterministic agent behavior.
 
@@ -251,7 +317,20 @@ Acceptance checks:
 - Failed files do not stop unrelated files unless a future `--fail-fast` flag is explicitly added.
 - Large files fail with clear warnings/errors instead of crashing the process.
 
-### Phase 5: Metadata, Sidecars, And Reproducibility
+Implemented notes:
+
+- Added `concurrency` config and `--concurrency <n>`.
+- Default concurrency is `1`.
+- Runs use an ordered worker pool so sequential and concurrent summaries keep the same sorted result order.
+- Added pre-decode guards using `MAX_IMAGE_PIXELS`, `MAX_IMAGE_DIMENSION`, and `MAX_FILE_SIZE_BYTES`.
+- Added tests for concurrent ordering, partial failure preservation, and oversized image rejection.
+
+Not yet done:
+
+- Human-mode progress output.
+- Optional JSONL progress mode.
+
+### Phase 5: Metadata, Sidecars, And Reproducibility — Mostly Done
 
 Goal: make every output traceable to source, settings, profile, and tool version.
 
@@ -284,7 +363,21 @@ Acceptance checks:
 - Sidecar writing failures are reported clearly.
 - Dry run reports planned sidecar paths without writing them.
 
-### Phase 6: Color Management
+Implemented notes:
+
+- Added `saveSidecar`, `--save-sidecar`, and `--no-sidecar`.
+- Added `sidecarPath` to per-file results when sidecars are enabled.
+- Completed conversions write JSON sidecars at `<outputPath>.json`.
+- Dry runs report planned sidecar paths without writing sidecar files.
+- Sidecars include generator/version, source path/name/relative path/size/dimensions, output path/name/relative path/dimensions, profile details, effective settings after auto analysis, auto warnings, output format/quality/max dimension, and color-management settings.
+- Sidecar write failures become per-file `error` results.
+
+Not yet done:
+
+- General image metadata preserve/strip/embed policy.
+- Non-JSON sidecar formats.
+
+### Phase 6: Color Management — Done
 
 Goal: expose the color-management capabilities already represented in vendored DarkSlide utilities.
 
@@ -309,7 +402,17 @@ Acceptance checks:
 - Unsupported profile ids fail at config validation time.
 - Color conversion and ICC embedding behavior are tested separately.
 
-### Phase 7: RAW And Scanner Workflows
+Implemented notes:
+
+- Added `colorManagement.inputProfileId`, `colorManagement.outputProfileId`, and `colorManagement.embedOutputProfile`.
+- Added `--input-profile`, `--output-profile`, `--embed-output-profile`, and `--no-embed-output-profile`.
+- Supported ids are `srgb`, `display-p3`, and `adobe-rgb`.
+- Wired through the existing vendored DarkSlide color-profile transform path.
+- Added ICC embedding through Sharp, including generated ICC handling for Adobe RGB.
+- Added summary and sidecar visibility.
+- Added tests for validation, pixel conversion, ICC embedding on/off, and all supported output profiles.
+
+### Phase 7: RAW And Scanner Workflows — Pending
 
 Goal: add RAW support only after the stable CLI, schema, and image-quality tests are in place.
 
@@ -337,7 +440,49 @@ Acceptance checks:
 - Missing RAW dependencies fail with clear setup instructions.
 - RAW and non-RAW paths share the same summary and sidecar contract.
 
-### Phase 8: DarkSlide App Interop
+Implementation guidance:
+
+1. Start with a design spike, not a broad implementation.
+   - Add `docs/raw-workflow-design.md`.
+   - Compare at least two approaches: external CLI decoder versus Node library.
+   - Record install burden, licensing, platform support, 16-bit output behavior, metadata/orientation handling, and maintenance risk.
+2. Prefer a pre-processing boundary for the first iteration.
+   - Add a separate command or mode that converts RAW to an intermediate TIFF/PNG, then feeds the existing conversion path.
+   - Keep `processImageFile` focused on already-decoded supported raster inputs until the RAW backend is proven.
+   - Avoid adding RAW extensions to `SUPPORTED_INPUT_EXTENSIONS` until decode behavior is tested.
+3. Define the first config shape conservatively.
+   - Candidate shape:
+     ```json
+     {
+       "raw": {
+         "enabled": false,
+         "backend": "external",
+         "decoderPath": null,
+         "intermediateFormat": "tiff",
+         "preserveIntermediate": false
+       }
+     }
+     ```
+   - Validate every field before running any decode work.
+4. Add dependency detection before decode.
+   - If using `dcraw`, `libraw`, or another external tool, add a startup/preflight check that reports the exact missing command.
+   - Missing decoder should exit as config/setup failure when RAW input is requested, not as a vague per-file crash.
+5. Preserve the current summary contract.
+   - RAW and non-RAW results should still include `inputPath`, `outputPath`, optional `sidecarPath`, `status`, dimensions, profile, warnings, and errors.
+   - Sidecars should record RAW backend, decoder version if available, intermediate path policy, source dimensions, and any orientation/white-balance assumptions.
+6. Add tests before enabling real RAW input.
+   - Unit-test backend selection and missing dependency errors with mocked command checks.
+   - Integration-test a tiny license-safe RAW fixture only if one is approved.
+   - Otherwise document private RAW fixture testing exactly as Phase 3 documents private scan fixtures.
+7. Keep scanner/camera presets separate.
+   - Add presets only after RAW decode and color behavior are stable.
+   - Presets should be explicit config snippets, not hidden behavior.
+
+Suggested first task for Phase 7:
+
+- Create `docs/raw-workflow-design.md` and a small `raw` config schema proposal without changing runtime behavior. This makes the backend choice reviewable before expensive decode logic lands.
+
+### Phase 8: DarkSlide App Interop — Pending
 
 Goal: allow the CLI and app to exchange presets and conversion state without coupling the CLI to GUI storage.
 
@@ -360,7 +505,35 @@ Acceptance checks:
 - The app can understand exported CLI state where explicitly supported.
 - Unsupported preset versions fail with actionable messages.
 
-### Phase 9: Distribution And CI
+Implementation guidance:
+
+1. Start with import-only preset support.
+   - Add a config field such as `presetPath` or a flag such as `--preset <path>`.
+   - Load JSON, validate it as a `DarkslidePresetFile`, and map it to CLI `profile` plus `settings`.
+   - Keep direct GUI storage and Tauri APIs out of scope.
+2. Make precedence explicit.
+   - Recommended order: defaults, config file, preset file, CLI overrides.
+   - Document whether `--profile` overrides the preset profile and whether `settings` deep-merge over preset settings.
+3. Validate preset compatibility.
+   - Check `darkslideVersion`.
+   - Check `profile.id`, `profile.name`, `profile.type`, `profile.filmType`, and `profile.defaultSettings`.
+   - Reject unsupported versions with a `UsageError` and exit code `2`.
+4. Decide what “export” means before implementing it.
+   - Candidate command: `--export-preset <path>` or a separate future command.
+   - Export should include only fields the app can understand.
+   - Avoid exporting CLI-only fields such as `input`, `outputDir`, `concurrency`, or sidecar paths unless a separate CLI state format is created.
+5. Add fixtures.
+   - Add tiny JSON preset fixtures under a test fixture directory.
+   - Include one valid preset, one unsupported version, and one malformed preset.
+6. Protect the existing config contract.
+   - Preset import should be additive.
+   - Existing config files without presets should behave exactly as they do now.
+
+Suggested first task for Phase 8:
+
+- Add fixture-driven tests and validation helpers for `DarkslidePresetFile` without wiring a public flag yet. Once validation is solid, add `--preset`.
+
+### Phase 9: Distribution And CI — Pending
 
 Goal: make the CLI installable and continuously verified.
 
@@ -388,20 +561,63 @@ Acceptance checks:
 - The published package can run `darkslide-convert --help`.
 - Release notes explain any JSON contract changes.
 
+Implementation guidance:
+
+1. Add CI before publishing.
+   - Use GitHub Actions if the repo is on GitHub.
+   - Recommended job matrix initially: one current LTS Node version on Ubuntu.
+   - Add macOS only if Sharp or RAW workflows show platform-specific behavior.
+2. CI commands should match local verification.
+   - `npm ci`
+   - `npm run typecheck`
+   - `npm test`
+   - `npm run build`
+   - `node dist/cli.js --help`
+   - `node dist/cli.js --print-default-config`
+   - `node -e "JSON.parse(require('fs').readFileSync('schemas/darkslide-config.schema.json','utf8'))"`
+3. Add a package smoke test.
+   - Run `npm pack --dry-run` first to inspect published files.
+   - Then consider a temp-directory install from `npm pack` output and run `darkslide-convert --help`.
+   - Ensure `dist/cli.js`, declarations, README, LICENSE, schema, example config, and docs needed by package users are included.
+4. Decide publish policy before removing `"private": true`.
+   - Confirm package name.
+   - Decide semantic versioning policy.
+   - Decide what constitutes a breaking JSON summary change.
+5. Add release notes.
+   - Start with `CHANGELOG.md`.
+   - Call out new machine-readable fields, config fields, and sidecar/schema changes.
+6. Keep release workflow manual at first.
+   - Use CI for confidence.
+   - Add automated npm publishing only after package contents and support policy are stable.
+
+Suggested first task for Phase 9:
+
+- Add a CI workflow that runs install, typecheck, tests, build, help smoke test, default-config smoke test, and JSON schema parse test. Leave npm publishing manual and disabled.
+
 ## Recommended Immediate Backlog
 
-Work on these items first:
+Previous near-term backlog status:
 
-1. Add `docs/cli-reference.md` or expand the README into a full CLI reference.
-2. Add `--list-profiles`.
-3. Add a config JSON Schema.
-4. Add tests that pin the JSON summary shape.
-5. Add deterministic fixture-based image quality tests.
-6. Add `npm run build` to the normal verification habit.
-7. Add sidecar design notes before implementing sidecars.
-8. Add concurrency only after image fixture tests protect output parity.
+- Done: add `docs/cli-reference.md` or expand the README into a full CLI reference.
+- Done: add `--list-profiles`.
+- Done: add a config JSON Schema.
+- Partly done: add tests that pin the JSON summary shape. Integration coverage exists, but there is no dedicated summary schema or snapshot suite yet.
+- Done: add deterministic fixture-based image quality tests.
+- Done: add `npm run build` to the normal verification habit.
+- Done: add sidecar design notes/implementation.
+- Done: add concurrency after image fixture tests protect output parity.
 
-Suggested first three implementation tasks for an AI agent:
+Recommended next backlog:
+
+1. Phase 7 design spike: write `docs/raw-workflow-design.md` and propose `raw` config shape before implementing decoding.
+2. Add a dedicated JSON summary schema or snapshot-style summary contract tests.
+3. Add CI for install, typecheck, tests, build, schema parse, help smoke, and default-config smoke.
+4. Add package smoke testing with `npm pack`.
+5. Decide package publishing/support policy and whether to keep `"private": true`.
+6. Add `CHANGELOG.md`.
+7. Build DarkSlide preset validation fixtures before wiring public interop flags.
+
+Previous suggested first three implementation tasks for an AI agent:
 
 1. Implement `--list-profiles`.
    - Read profile data from `FILM_PROFILES`.
@@ -442,30 +658,35 @@ Current test coverage already includes:
 - Direct DarkSlide `processImageData` parity for an equivalent raw buffer.
 - Tiny PNG conversion.
 - Dry-run behavior.
+- Config schema parseability.
+- Profile listing in human and JSON modes.
+- Default config printing.
+- Conservative config validation for top-level fields and nested `settings`.
+- JSON sidecar writing, dry-run sidecar planning, and sidecar write failure reporting.
+- Deterministic synthetic image-quality baseline checks.
+- Concurrent ordering and partial failure behavior.
+- Pre-decode oversized image rejection.
+- Color-management validation, conversion, summary/sidecar reporting, and ICC embedding behavior.
 
-Add unit tests for:
+Still useful future unit tests:
 
 - Unknown options.
-- Invalid config file shape.
-- Invalid `auto` values.
-- Invalid `maxDimension`.
-- Empty `outputDir`.
-- Empty `profile`.
-- Unknown profile.
-- Future profile listing.
-- Future JSON Schema compatibility.
+- Additional nested `settings` edge cases.
+- RAW backend selection and dependency detection once Phase 7 starts.
+- Preset import validation once Phase 8 starts.
+- Dedicated JSON summary schema compatibility if a summary schema is added.
 
-Add integration tests for:
+Still useful future integration tests:
 
 - Dry run does not create output directory.
 - Overwrite replaces existing outputs.
-- Unknown profile exits as invalid usage/config.
 - Multiple input globs remain sorted in the summary.
-- JSON output shape remains stable.
+- CLI-level JSON output shape snapshots.
 - JPEG, PNG, WebP, and TIFF encode smoke tests.
 - `maxDimension` changes output dimensions.
+- Package smoke tests after Phase 9 starts.
 
-Add image pipeline tests for:
+Current image pipeline tests cover:
 
 - Auto film-base success and warning behavior.
 - Flare on/off differences.
@@ -477,7 +698,7 @@ Add image pipeline tests for:
 - Slide profile behavior.
 - Major film profile smoke checks.
 
-Add future visual regression tests with:
+Future visual regression tests could add:
 
 - Small deterministic synthetic images committed to the repo.
 - Optional private real-scan fixtures documented outside git.
@@ -492,7 +713,7 @@ Agents extending this project should follow these rules:
 - Preserve deterministic JSON output unless the task explicitly changes the contract.
 - Add tests before or with behavior changes.
 - Run `npm test`, `npm run typecheck`, and `npm run build` before finishing.
-- Keep RAW support, metadata embedding, sidecars, and concurrency as separate milestones.
+- Sidecars, concurrency, and color management are now implemented. Keep RAW support, broad metadata policy, app interop, CI, and distribution as separate milestones.
 - Do not treat vendored DarkSlide pipeline changes as casual refactors; protect them with parity or fixture tests.
 - Prefer additive flags and config fields over changing existing defaults.
 - Document every new machine-readable field.
@@ -501,6 +722,7 @@ Agents extending this project should follow these rules:
 
 - This document is a roadmap and review, not proof that future features already exist.
 - The current CLI is intentionally focused on TIFF/JPEG/PNG/WebP inputs and JPEG/PNG/WebP/TIFF outputs.
-- RAW import, sidecars, advanced metadata handling, color-profile controls, concurrency, and app preset interop should be implemented incrementally.
+- RAW import, advanced metadata handling, app preset interop, CI, and distribution should be implemented incrementally.
+- Sidecars, color-profile controls, and deterministic concurrency are now part of the current CLI surface.
 - The main reader is an AI agent or future automation-oriented maintainer.
 - Shipping quality, image quality, and AI-agent usability are the top priorities.
