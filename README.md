@@ -8,11 +8,15 @@ The project is designed around a simple contract: provide image paths or globs, 
 
 - Batch conversion for scanned film negatives.
 - DarkSlide-derived film profiles and CPU image pipeline.
-- Config-file driven workflow with command-line overrides.
+- Config-file driven workflow with command-line overrides and a published JSON Schema.
 - Deterministic JSON summaries for automation.
 - Dry-run mode for planning output paths without writing images.
 - Auto film-base and flare estimation, with optional exposure and white-balance analysis.
+- Deterministic concurrent batch processing with stable result ordering.
+- Optional JSON sidecars for reproducible conversions.
+- Color management for `srgb`, `display-p3`, and `adobe-rgb`, with optional output ICC embedding.
 - JPEG, PNG, WebP, and TIFF output through `sharp`.
+- Safety guards for file size, image dimensions, and total pixel count.
 - Testable TypeScript API for direct processor use.
 
 ## Supported Formats
@@ -31,7 +35,7 @@ Output formats:
 - `webp`
 - `tiff`
 
-RAW import, Tauri APIs, GUI preset storage, and dust-removal marks are intentionally out of scope for the current v1 CLI.
+RAW import, Tauri APIs, GUI preset storage, broad image metadata policy controls, and dust-removal marks are intentionally out of scope for the current v1 CLI.
 
 ## Install
 
@@ -126,6 +130,24 @@ darkslide-convert \
   --json
 ```
 
+List available film profiles:
+
+```bash
+darkslide-convert --list-profiles --json
+```
+
+Write reproducibility sidecars and convert to Display P3:
+
+```bash
+darkslide-convert \
+  --input "roll-01/*.tif" \
+  --output converted \
+  --save-sidecar \
+  --output-profile display-p3 \
+  --embed-output-profile \
+  --json
+```
+
 ## CLI Options
 
 ```text
@@ -178,10 +200,10 @@ See [docs/cli-reference.md](docs/cli-reference.md) for every current flag, confi
   },
   "files": [
     {
-        "inputPath": "/absolute/path/scans/frame-01.tif",
-        "outputPath": "/absolute/path/converted/frame-01-positive.jpg",
-        "sidecarPath": "/absolute/path/converted/frame-01-positive.jpg.json",
-        "status": "done",
+      "inputPath": "/absolute/path/scans/frame-01.tif",
+      "outputPath": "/absolute/path/converted/frame-01-positive.jpg",
+      "sidecarPath": "/absolute/path/converted/frame-01-positive.jpg.json",
+      "status": "done",
       "width": 4000,
       "height": 6000,
       "outputWidth": 4000,
@@ -209,6 +231,8 @@ Set `saveSidecar: true` or pass `--save-sidecar` to write a JSON sidecar beside 
 
 Set `colorManagement.outputProfileId` or pass `--output-profile` to choose `srgb`, `display-p3`, or `adobe-rgb`; summaries and sidecars report the effective color-management settings.
 
+Sidecars include generator/version, source and output paths, dimensions, profile details, effective settings, auto-analysis warnings, output options, and color-management settings.
+
 ## Development
 
 Run the standard checks:
@@ -229,15 +253,19 @@ npm run dev -- --input "scans/*.tif" --output converted --dry-run --json
 Project layout:
 
 - `src/cli.ts`: executable entry point, output formatting, and exit codes.
-- `src/config.ts`: argument parsing, config loading, defaults, and validation.
+- `src/config.ts`: argument parsing, config loading, defaults, profile/default config printing, and validation.
 - `src/files.ts`: glob expansion, output paths, and overwrite checks.
-- `src/processor.ts`: decode, auto analysis, conversion, encode, and batch summaries.
+- `src/processor.ts`: safety guards, decode, auto analysis, color-managed conversion, encode, sidecars, concurrency, and batch summaries.
 - `src/vendor/*`: DarkSlide-derived profiles, types, and image pipeline utilities.
 
-Release readiness is tracked in [docs/release-checklist.md](docs/release-checklist.md). The package is intentionally private while the config schema and JSON contract tests are still roadmap items.
+Release readiness is tracked in [docs/release-checklist.md](docs/release-checklist.md). The package is intentionally private until distribution policy, package contents, CI, and release support are settled.
 
 Image-quality regression coverage is documented in [docs/image-quality-baseline.md](docs/image-quality-baseline.md).
 
+The longer implementation tracker is [taking-darkslide-cli-further.md](taking-darkslide-cli-further.md).
+
 ## Roadmap
 
-Near-term priorities are config schema validation, profile listing, JSON summary contract tests, deterministic image-quality fixtures, release packaging, and CI. RAW import, sidecars, richer color management, and concurrent batch processing should be added as separate milestones after the current CLI contract is protected by tests.
+Completed milestones include documentation, config schema validation, profile listing, deterministic synthetic image-quality tests, concurrency, JSON sidecars, and color management.
+
+Next priorities are RAW workflow design, a dedicated JSON summary schema or snapshot contract suite, CI/package smoke tests, distribution policy, changelog/release notes, and DarkSlide preset interop. RAW import should remain separate from the stable TIFF/JPEG/PNG/WebP conversion path until decoder behavior is well tested.
