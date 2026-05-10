@@ -3,4 +3,6 @@ node_modules/
 coverage/
 
 # Keep local planning and generated documentation out of git.
-docs/
+docs/*
+!docs/cli-reference.md
+!docs/release-checklist.md

@@ -137,6 +137,8 @@ Options:
       --json                   Print deterministic JSON summary
 ```
 
+See [docs/cli-reference.md](docs/cli-reference.md) for every current flag, config field, output field, and smoke-test example.
+
 ## JSON Output Contract
 
 `--json` prints a single summary object:
@@ -201,6 +203,8 @@ Project layout:
 - `src/files.ts`: glob expansion, output paths, and overwrite checks.
 - `src/processor.ts`: decode, auto analysis, conversion, encode, and batch summaries.
 - `src/vendor/*`: DarkSlide-derived profiles, types, and image pipeline utilities.
+
+Release readiness is tracked in [docs/release-checklist.md](docs/release-checklist.md). The package is intentionally private while the config schema and JSON contract tests are still roadmap items.
 
 ## Roadmap
 
