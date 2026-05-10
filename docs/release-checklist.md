@@ -1,6 +1,6 @@
 # Release Checklist
 
-DarkSlide CLI remains private during local development. `package.json` intentionally has `"private": true` until the config and JSON output contracts are protected by schema and contract tests.
+DarkSlide CLI remains private during local development. `package.json` intentionally has `"private": true` until the JSON output contract is protected by broader contract tests and the team has chosen a public package/support policy.
 
 ## Required Checks
 
@@ -41,8 +41,8 @@ Before changing `"private": true`, decide the public package name and verify:
 - local package smoke tests pass,
 - README and `docs/cli-reference.md` document the shipped command surface,
 - the example config matches runtime behavior,
-- JSON summary compatibility is covered by tests,
-- config validation is strong enough for generated configs,
+- JSON summary compatibility is covered by broad contract tests,
+- config validation and `schemas/darkslide-config.schema.json` are stable enough for generated configs,
 - release notes call out any machine-readable output changes.
 
 Do not publish future roadmap features as if they are already available.

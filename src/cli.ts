@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { UsageError } from './errors.js';
-import { getHelpText, loadCliConfig, parseArgs } from './config.js';
+import { getDefaultConfig, getHelpText, loadCliConfig, parseArgs } from './config.js';
 import { installImageDataShim } from './imageData.js';
 import { runConversion } from './processor.js';
+import { FILM_PROFILES } from './vendor/constants.js';
 import type { CliRunSummary } from './types.js';
 
 function writeLine(message: string) {
@@ -28,6 +29,31 @@ function printHumanSummary(summary: CliRunSummary) {
   }
 }
 
+function getProfileList() {
+  return FILM_PROFILES
+    .map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      type: profile.type,
+      filmType: profile.filmType ?? 'negative',
+      category: profile.category ?? 'Generic',
+      description: profile.description,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function printProfiles(json: boolean) {
+  const profiles = getProfileList();
+  if (json) {
+    writeLine(JSON.stringify({ profiles }, null, 2));
+    return;
+  }
+
+  for (const profile of profiles) {
+    writeLine(`${profile.id}\t${profile.name}\t${profile.type}\t${profile.filmType}\t${profile.category}\t${profile.description}`);
+  }
+}
+
 export async function main(argv = process.argv.slice(2)) {
   installImageDataShim();
 
@@ -35,6 +61,16 @@ export async function main(argv = process.argv.slice(2)) {
     const args = parseArgs(argv);
     if (args.help) {
       writeLine(getHelpText());
+      return 0;
+    }
+
+    if (args.listProfiles) {
+      printProfiles(Boolean(args.json));
+      return 0;
+    }
+
+    if (args.printDefaultConfig) {
+      writeLine(JSON.stringify(getDefaultConfig(), null, 2));
       return 0;
     }
 

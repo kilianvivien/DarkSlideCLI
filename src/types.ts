@@ -68,4 +68,6 @@ export interface ParsedArgs {
   dryRun?: boolean;
   json?: boolean;
   help?: boolean;
+  listProfiles?: boolean;
+  printDefaultConfig?: boolean;
 }

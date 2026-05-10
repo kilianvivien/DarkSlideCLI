@@ -1,12 +1,64 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { UsageError } from './errors.js';
+import { FILM_PROFILES } from './vendor/constants.js';
 import type { CliConfig, CliOutputFormat, ParsedArgs } from './types.js';
 import type { ConversionSettings } from './vendor/types.js';
 
 const OUTPUT_FORMATS = new Set<CliOutputFormat>(['jpeg', 'png', 'webp', 'tiff']);
+const PROFILE_IDS = new Set(FILM_PROFILES.map((profile) => profile.id));
+const TOP_LEVEL_CONFIG_FIELDS = new Set([
+  'input',
+  'outputDir',
+  'profile',
+  'format',
+  'quality',
+  'maxDimension',
+  'overwrite',
+  'dryRun',
+  'json',
+  'auto',
+  'naming',
+  'settings',
+]);
+const AUTO_FIELDS = new Set(['filmBase', 'flare', 'exposure', 'whiteBalance']);
+const NAMING_FIELDS = new Set(['suffix']);
+const SETTINGS_FIELDS = new Set([
+  'exposure',
+  'contrast',
+  'saturation',
+  'shadowRecovery',
+  'midtoneContrast',
+  'flareCorrection',
+  'temperature',
+  'tint',
+  'redBalance',
+  'greenBalance',
+  'blueBalance',
+  'blackPoint',
+  'whitePoint',
+  'highlightProtection',
+  'curves',
+  'rotation',
+  'levelAngle',
+  'crop',
+  'filmBaseSample',
+  'residualBaseCorrection',
+  'blackAndWhite',
+  'sharpen',
+  'noiseReduction',
+  'dustRemoval',
+]);
+const CURVES_FIELDS = new Set(['rgb', 'red', 'green', 'blue']);
+const CURVE_POINT_FIELDS = new Set(['x', 'y']);
+const CROP_FIELDS = new Set(['x', 'y', 'width', 'height', 'aspectRatio']);
+const FILM_BASE_SAMPLE_FIELDS = new Set(['r', 'g', 'b']);
+const BLACK_AND_WHITE_FIELDS = new Set(['enabled', 'redMix', 'greenMix', 'blueMix', 'tone']);
+const SHARPEN_FIELDS = new Set(['enabled', 'radius', 'amount']);
+const NOISE_REDUCTION_FIELDS = new Set(['enabled', 'luminanceStrength']);
+const DUST_REMOVAL_FIELDS = new Set(['autoEnabled', 'autoDetectMode', 'autoSensitivity', 'autoMaxRadius', 'manualBrushRadius', 'marks']);
 
-const DEFAULT_CONFIG: CliConfig = {
+export const DEFAULT_CONFIG: CliConfig = {
   input: [],
   outputDir: 'converted',
   profile: 'generic-color',
@@ -49,6 +101,14 @@ function parseNumber(value: string, flag: string) {
   return parsed;
 }
 
+function parseInteger(value: string, flag: string) {
+  const parsed = parseNumber(value, flag);
+  if (!Number.isInteger(parsed)) {
+    throw new UsageError(`${flag} must be an integer.`);
+  }
+  return parsed;
+}
+
 function normalizeFormat(format: string): CliOutputFormat {
   const normalized = format.replace(/^image\//, '').toLowerCase();
   const result = normalized === 'jpg' ? 'jpeg' : normalized;
@@ -81,10 +141,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
       parsed.format = normalizeFormat(readFlagValue(argv, index, arg));
       index += 1;
     } else if (arg === '--quality' || arg === '-q') {
-      parsed.quality = parseNumber(readFlagValue(argv, index, arg), arg);
+      parsed.quality = parseInteger(readFlagValue(argv, index, arg), arg);
       index += 1;
     } else if (arg === '--max-dimension' || arg === '--maxDimension') {
-      parsed.maxDimension = parseNumber(readFlagValue(argv, index, arg), arg);
+      parsed.maxDimension = parseInteger(readFlagValue(argv, index, arg), arg);
       index += 1;
     } else if (arg === '--overwrite') {
       parsed.overwrite = true;
@@ -94,6 +154,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
       parsed.dryRun = true;
     } else if (arg === '--json') {
       parsed.json = true;
+    } else if (arg === '--list-profiles') {
+      parsed.listProfiles = true;
+    } else if (arg === '--print-default-config') {
+      parsed.printDefaultConfig = true;
     } else if (arg.startsWith('--')) {
       throw new UsageError(`Unknown option "${arg}".`);
     } else {
@@ -113,20 +177,245 @@ function normalizeInput(input: RawConfig['input']): string[] {
 }
 
 function validateQuality(quality: number) {
-  if (!Number.isFinite(quality) || quality < 1 || quality > 100) {
-    throw new UsageError('quality must be between 1 and 100.');
+  if (!Number.isInteger(quality) || quality < 1 || quality > 100) {
+    throw new UsageError('quality must be an integer between 1 and 100.');
   }
-  return Math.round(quality);
+  return quality;
 }
 
 function validateMaxDimension(maxDimension: number | null) {
   if (maxDimension === null) {
     return null;
   }
-  if (!Number.isFinite(maxDimension) || maxDimension < 1) {
-    throw new UsageError('maxDimension must be null or a positive number.');
+  if (!Number.isInteger(maxDimension) || maxDimension < 1) {
+    throw new UsageError('maxDimension must be null or a positive integer.');
   }
-  return Math.round(maxDimension);
+  return maxDimension;
+}
+
+function assertPlainObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new UsageError(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertNoUnknownKeys(value: Record<string, unknown>, allowed: Set<string>, label: string) {
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      throw new UsageError(`Unknown ${label} field "${key}".`);
+    }
+  }
+}
+
+function assertBoolean(value: unknown, label: string) {
+  if (typeof value !== 'boolean') {
+    throw new UsageError(`${label} must be a boolean.`);
+  }
+}
+
+function assertString(value: unknown, label: string) {
+  if (typeof value !== 'string') {
+    throw new UsageError(`${label} must be a string.`);
+  }
+}
+
+function assertNonEmptyString(value: unknown, label: string) {
+  if (typeof value !== 'string') {
+    throw new UsageError(`${label} must be a string.`);
+  }
+  if (!value.trim()) {
+    throw new UsageError(`${label} must not be empty.`);
+  }
+}
+
+function assertNumber(value: unknown, label: string) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new UsageError(`${label} must be a finite number.`);
+  }
+}
+
+function assertNullableNumber(value: unknown, label: string) {
+  if (value !== null) {
+    assertNumber(value, label);
+  }
+}
+
+function validateInputValue(value: unknown) {
+  if (typeof value === 'string') {
+    if (!value.trim()) {
+      throw new UsageError('input must not be empty.');
+    }
+    return;
+  }
+
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new UsageError('input must be a non-empty string or non-empty string array.');
+  }
+
+  value.forEach((item, index) => assertNonEmptyString(item, `input[${index}]`));
+}
+
+function validateAutoConfig(value: unknown) {
+  const auto = assertPlainObject(value, 'auto');
+  assertNoUnknownKeys(auto, AUTO_FIELDS, 'auto');
+  for (const [key, candidate] of Object.entries(auto)) {
+    assertBoolean(candidate, `auto.${key}`);
+  }
+}
+
+function validateNamingConfig(value: unknown) {
+  const naming = assertPlainObject(value, 'naming');
+  assertNoUnknownKeys(naming, NAMING_FIELDS, 'naming');
+  if ('suffix' in naming) {
+    assertString(naming.suffix, 'naming.suffix');
+  }
+}
+
+function validateCurvePoint(value: unknown, label: string) {
+  const point = assertPlainObject(value, label);
+  assertNoUnknownKeys(point, CURVE_POINT_FIELDS, label);
+  assertNumber(point.x, `${label}.x`);
+  assertNumber(point.y, `${label}.y`);
+}
+
+function validateCurves(value: unknown, label: string) {
+  const curves = assertPlainObject(value, label);
+  assertNoUnknownKeys(curves, CURVES_FIELDS, label);
+  for (const [channel, points] of Object.entries(curves)) {
+    if (!Array.isArray(points)) {
+      throw new UsageError(`${label}.${channel} must be an array.`);
+    }
+    points.forEach((point, index) => validateCurvePoint(point, `${label}.${channel}[${index}]`));
+  }
+}
+
+function validateNumberObject(value: unknown, allowed: Set<string>, label: string, nullableFields = new Set<string>()) {
+  const object = assertPlainObject(value, label);
+  assertNoUnknownKeys(object, allowed, label);
+  for (const [key, candidate] of Object.entries(object)) {
+    if (nullableFields.has(key)) {
+      assertNullableNumber(candidate, `${label}.${key}`);
+    } else {
+      assertNumber(candidate, `${label}.${key}`);
+    }
+  }
+}
+
+function validateBooleanNumberObject(value: unknown, allowed: Set<string>, booleanFields: Set<string>, label: string) {
+  const object = assertPlainObject(value, label);
+  assertNoUnknownKeys(object, allowed, label);
+  for (const [key, candidate] of Object.entries(object)) {
+    if (booleanFields.has(key)) {
+      assertBoolean(candidate, `${label}.${key}`);
+    } else {
+      assertNumber(candidate, `${label}.${key}`);
+    }
+  }
+}
+
+function validateSettings(value: unknown) {
+  const settings = assertPlainObject(value, 'settings');
+  assertNoUnknownKeys(settings, SETTINGS_FIELDS, 'settings');
+
+  for (const [key, candidate] of Object.entries(settings)) {
+    switch (key) {
+      case 'curves':
+        validateCurves(candidate, 'settings.curves');
+        break;
+      case 'crop':
+        validateNumberObject(candidate, CROP_FIELDS, 'settings.crop', new Set(['aspectRatio']));
+        break;
+      case 'filmBaseSample':
+        if (candidate !== null) {
+          validateNumberObject(candidate, FILM_BASE_SAMPLE_FIELDS, 'settings.filmBaseSample');
+        }
+        break;
+      case 'residualBaseCorrection':
+        assertBoolean(candidate, 'settings.residualBaseCorrection');
+        break;
+      case 'blackAndWhite':
+        validateBooleanNumberObject(candidate, BLACK_AND_WHITE_FIELDS, new Set(['enabled']), 'settings.blackAndWhite');
+        break;
+      case 'sharpen':
+        validateBooleanNumberObject(candidate, SHARPEN_FIELDS, new Set(['enabled']), 'settings.sharpen');
+        break;
+      case 'noiseReduction':
+        validateBooleanNumberObject(candidate, NOISE_REDUCTION_FIELDS, new Set(['enabled']), 'settings.noiseReduction');
+        break;
+      case 'dustRemoval':
+        validateDustRemoval(candidate);
+        break;
+      default:
+        assertNumber(candidate, `settings.${key}`);
+        break;
+    }
+  }
+}
+
+function validateDustRemoval(value: unknown) {
+  const dustRemoval = assertPlainObject(value, 'settings.dustRemoval');
+  assertNoUnknownKeys(dustRemoval, DUST_REMOVAL_FIELDS, 'settings.dustRemoval');
+  for (const [key, candidate] of Object.entries(dustRemoval)) {
+    if (key === 'autoEnabled') {
+      assertBoolean(candidate, `settings.dustRemoval.${key}`);
+    } else if (key === 'autoDetectMode') {
+      if (candidate !== 'spots' && candidate !== 'scratches' && candidate !== 'both') {
+        throw new UsageError('settings.dustRemoval.autoDetectMode must be spots, scratches, or both.');
+      }
+    } else if (key === 'marks') {
+      if (!Array.isArray(candidate)) {
+        throw new UsageError('settings.dustRemoval.marks must be an array.');
+      }
+    } else {
+      assertNumber(candidate, `settings.dustRemoval.${key}`);
+    }
+  }
+}
+
+function validateConfigFileShape(config: RawConfig) {
+  const object = assertPlainObject(config, 'Config file') as RawConfig & Record<string, unknown>;
+  assertNoUnknownKeys(object, TOP_LEVEL_CONFIG_FIELDS, 'config');
+
+  if ('input' in object) {
+    validateInputValue(object.input);
+  }
+  if ('outputDir' in object) {
+    assertNonEmptyString(object.outputDir, 'outputDir');
+  }
+  if ('profile' in object) {
+    assertNonEmptyString(object.profile, 'profile');
+  }
+  if ('format' in object) {
+    assertString(object.format, 'format');
+    normalizeFormat(String(object.format));
+  }
+  if ('quality' in object) {
+    if (typeof object.quality !== 'number') {
+      throw new UsageError('quality must be a number.');
+    }
+    validateQuality(object.quality);
+  }
+  if ('maxDimension' in object) {
+    if (object.maxDimension !== null && typeof object.maxDimension !== 'number') {
+      throw new UsageError('maxDimension must be null or a positive integer.');
+    }
+    validateMaxDimension(object.maxDimension as number | null);
+  }
+  for (const field of ['overwrite', 'dryRun', 'json']) {
+    if (field in object) {
+      assertBoolean(object[field], field);
+    }
+  }
+  if ('auto' in object) {
+    validateAutoConfig(object.auto);
+  }
+  if ('naming' in object) {
+    validateNamingConfig(object.naming);
+  }
+  if ('settings' in object) {
+    validateSettings(object.settings);
+  }
 }
 
 async function loadConfigFile(configPath: string | undefined): Promise<RawConfig> {
@@ -147,7 +436,9 @@ async function loadConfigFile(configPath: string | undefined): Promise<RawConfig
     throw new UsageError('Config file must contain a JSON object.');
   }
 
-  return parsed as RawConfig;
+  const config = assertPlainObject(parsed, 'Config file') as RawConfig;
+  validateConfigFileShape(config);
+  return config;
 }
 
 export async function loadCliConfig(args: ParsedArgs): Promise<CliConfig> {
@@ -190,7 +481,16 @@ export async function loadCliConfig(args: ParsedArgs): Promise<CliConfig> {
     throw new UsageError('profile must not be empty.');
   }
 
+  if (!PROFILE_IDS.has(merged.profile)) {
+    const available = [...PROFILE_IDS].sort().join(', ');
+    throw new UsageError(`Unknown profile "${merged.profile}". Available profiles: ${available}`);
+  }
+
   return merged;
+}
+
+export function getDefaultConfig(): CliConfig {
+  return structuredClone(DEFAULT_CONFIG);
 }
 
 export function getHelpText() {
@@ -208,5 +508,7 @@ export function getHelpText() {
     '      --overwrite              Replace existing outputs',
     '      --dry-run                Print planned work without writing',
     '      --json                   Print deterministic JSON summary',
+    '      --list-profiles          Print available film profiles',
+    '      --print-default-config   Print the default JSON config',
   ].join('\n');
 }

@@ -41,6 +41,8 @@ Options:
       --overwrite              Replace existing outputs
       --dry-run                Print planned work without writing
       --json                   Print deterministic JSON summary
+      --list-profiles          Print available film profiles
+      --print-default-config   Print the default JSON config
 ```
 
 The implementation also accepts `-h`/`--help`, `--no-overwrite`, `--maxDimension`, and positional input paths or globs. `jpg` is accepted as an alias for `jpeg`.
@@ -117,6 +119,24 @@ node dist/cli.js \
   --json
 ```
 
+List available profiles:
+
+```bash
+npm run dev -- --list-profiles
+```
+
+List available profiles as JSON:
+
+```bash
+npm run dev -- --list-profiles --json
+```
+
+Print the default config:
+
+```bash
+npm run dev -- --print-default-config
+```
+
 ## Supported Formats
 
 Input files are discovered from paths or globs, filtered to supported extensions, deduplicated, converted to absolute paths, and sorted deterministically.
@@ -163,6 +183,10 @@ Supported output formats:
 
 `--json`: Prints one deterministic JSON summary object instead of human-readable lines.
 
+`--list-profiles`: Prints available film profiles and exits successfully without requiring inputs. In human mode, each line includes id, name, type, film type, category, and description. With `--json`, stdout contains a deterministic object with a `profiles` array.
+
+`--print-default-config`: Prints the default JSON config and exits successfully without requiring inputs.
+
 `-h, --help`: Prints help and exits successfully without requiring inputs.
 
 ## Config Reference
@@ -190,6 +214,8 @@ Start from `darkslide.config.example.json`.
   "settings": {}
 }
 ```
+
+The published JSON Schema is [schemas/darkslide-config.schema.json](../schemas/darkslide-config.schema.json). The runtime validates the same current field set before conversion work begins.
 
 Top-level fields:
 
@@ -232,7 +258,7 @@ Top-level fields:
 - `noiseReduction.enabled`, `noiseReduction.luminanceStrength`
 - `dustRemoval`
 
-The current v1 runtime does not yet validate every nested `settings` field with a formal schema. Keep generated configs conservative and prefer a dry run before large jobs.
+The current runtime accepts only known nested `settings` keys and rejects obviously invalid primitive types. Keep generated configs conservative and prefer a dry run before large jobs.
 
 ## Precedence
 
@@ -321,6 +347,90 @@ Status meanings:
 - `skipped`: output already existed and `overwrite` was false.
 - `error`: conversion failed for this file.
 
+Done result:
+
+```json
+{
+  "inputPath": "/absolute/path/scans/frame-01.tif",
+  "outputPath": "/absolute/path/converted/frame-01-positive.jpg",
+  "status": "done",
+  "width": 4000,
+  "height": 6000,
+  "outputWidth": 2400,
+  "outputHeight": 3600,
+  "profile": "generic-color",
+  "warnings": []
+}
+```
+
+Skipped result:
+
+```json
+{
+  "inputPath": "/absolute/path/scans/frame-02.tif",
+  "outputPath": "/absolute/path/converted/frame-02-positive.jpg",
+  "status": "skipped",
+  "width": null,
+  "height": null,
+  "outputWidth": null,
+  "outputHeight": null,
+  "profile": "generic-color",
+  "warnings": ["Output exists; pass --overwrite to replace it."]
+}
+```
+
+Pending dry-run result:
+
+```json
+{
+  "inputPath": "/absolute/path/scans/frame-03.tif",
+  "outputPath": "/absolute/path/converted/frame-03-positive.jpg",
+  "status": "pending",
+  "width": null,
+  "height": null,
+  "outputWidth": null,
+  "outputHeight": null,
+  "profile": "generic-color",
+  "warnings": []
+}
+```
+
+Error result:
+
+```json
+{
+  "inputPath": "/absolute/path/scans/broken.tif",
+  "outputPath": "/absolute/path/converted/broken-positive.jpg",
+  "status": "error",
+  "width": null,
+  "height": null,
+  "outputWidth": null,
+  "outputHeight": null,
+  "profile": "generic-color",
+  "warnings": [],
+  "error": "Input file contains unsupported image data."
+}
+```
+
+## Profile Listing JSON
+
+`--list-profiles --json` prints:
+
+```json
+{
+  "profiles": [
+    {
+      "id": "generic-color",
+      "name": "Generic Color",
+      "type": "color",
+      "filmType": "negative",
+      "category": "Generic",
+      "description": "Balanced color-negative starting point for most consumer scans."
+    }
+  ]
+}
+```
+
 ## Human Output
 
 Without `--json`, stdout starts with a one-line summary and then one line per file:
@@ -340,4 +450,4 @@ pending /absolute/input-03.tif -> /absolute/output/input-03-positive.jpg
 
 ## Current Boundaries
 
-The current CLI supports TIFF, JPEG, PNG, and WebP input. RAW import, sidecars, metadata embedding, advanced color-profile controls, concurrent processing, JSON Schema validation, and profile-listing flags are roadmap items and are not part of the current command surface.
+The current CLI supports TIFF, JPEG, PNG, and WebP input. RAW import, sidecars, metadata embedding, advanced color-profile controls, and concurrent processing are roadmap items and are not part of the current command surface.

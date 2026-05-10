@@ -135,6 +135,8 @@ Options:
       --overwrite              Replace existing outputs
       --dry-run                Print planned work without writing
       --json                   Print deterministic JSON summary
+      --list-profiles          Print available film profiles
+      --print-default-config   Print the default JSON config
 ```
 
 See [docs/cli-reference.md](docs/cli-reference.md) for every current flag, config field, output field, and smoke-test example.
@@ -178,6 +180,8 @@ Exit codes:
 - `2`: invalid CLI usage or config.
 
 For AI agents, prefer `--dry-run --json` before large conversion jobs. It confirms input matching, output naming, skip behavior, and config validity without writing images.
+
+The config schema is published at [schemas/darkslide-config.schema.json](schemas/darkslide-config.schema.json). Available profiles can be inspected with `darkslide-convert --list-profiles --json`, and the built-in defaults can be printed with `darkslide-convert --print-default-config`.
 
 ## Development
 
