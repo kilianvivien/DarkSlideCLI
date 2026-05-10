@@ -24,6 +24,7 @@ export interface CliConfig {
   overwrite: boolean;
   dryRun: boolean;
   json: boolean;
+  concurrency: number;
   auto: CliAutoConfig;
   naming: CliNamingConfig;
   settings: Partial<ConversionSettings>;
@@ -67,6 +68,7 @@ export interface ParsedArgs {
   overwrite?: boolean;
   dryRun?: boolean;
   json?: boolean;
+  concurrency?: number;
   help?: boolean;
   listProfiles?: boolean;
   printDefaultConfig?: boolean;

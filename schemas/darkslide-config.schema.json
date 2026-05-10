@@ -28,6 +28,7 @@
     "overwrite": { "type": "boolean" },
     "dryRun": { "type": "boolean" },
     "json": { "type": "boolean" },
+    "concurrency": { "type": "integer", "minimum": 1 },
     "auto": {
       "type": "object",
       "additionalProperties": false,

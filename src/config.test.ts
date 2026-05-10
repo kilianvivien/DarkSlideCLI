@@ -26,6 +26,8 @@ describe('CLI config', () => {
       'jpg',
       '--quality',
       '85',
+      '--concurrency',
+      '3',
       '--overwrite',
       '--json',
     ]);
@@ -37,6 +39,7 @@ describe('CLI config', () => {
     expect(config.profile).toBe('portra-400');
     expect(config.format).toBe('jpeg');
     expect(config.quality).toBe(85);
+    expect(config.concurrency).toBe(3);
     expect(config.overwrite).toBe(true);
     expect(config.json).toBe(true);
   });
@@ -76,6 +79,17 @@ describe('CLI config', () => {
     });
 
     await expect(loadCliConfig(parseArgs(['--config', configPath]))).rejects.toThrow(/maxDimension/i);
+  });
+
+  it('rejects invalid concurrency values', async () => {
+    expect(() => parseArgs(['--input', 'scan.tif', '--concurrency', '1.5'])).toThrow(/integer/i);
+
+    const configPath = await writeJsonConfig({
+      input: 'scan.tif',
+      concurrency: 0,
+    });
+
+    await expect(loadCliConfig(parseArgs(['--config', configPath]))).rejects.toThrow(/concurrency/i);
   });
 
   it('rejects empty outputDir and profile values', async () => {

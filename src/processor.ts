@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import { createImageData } from './imageData.js';
@@ -6,6 +6,9 @@ import { createOutputPath, ensureOutputDirectory, expandInputs, shouldSkipExisti
 import {
   createDefaultSettings,
   FILM_PROFILES,
+  MAX_FILE_SIZE_BYTES,
+  MAX_IMAGE_DIMENSION,
+  MAX_IMAGE_PIXELS,
 } from './vendor/constants.js';
 import {
   accumulateHistogram,
@@ -80,7 +83,20 @@ function resolveSettings(profile: FilmProfile, config: CliConfig): ConversionSet
 }
 
 async function decodeImage(inputPath: string): Promise<RawImage> {
-  const { data, info } = await sharp(inputPath, { limitInputPixels: false })
+  const metadata = await sharp(inputPath).metadata();
+  const width = metadata.width ?? 0;
+  const height = metadata.height ?? 0;
+  if (width <= 0 || height <= 0) {
+    throw new Error('Image dimensions could not be read before decode.');
+  }
+  if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+    throw new Error(`Image dimensions ${width}x${height} exceed limit ${MAX_IMAGE_DIMENSION}px per edge.`);
+  }
+  if (width * height > MAX_IMAGE_PIXELS) {
+    throw new Error(`Image has ${width * height} pixels, exceeding limit ${MAX_IMAGE_PIXELS}.`);
+  }
+
+  const { data, info } = await sharp(inputPath, { limitInputPixels: MAX_IMAGE_PIXELS })
     .rotate()
     .toColorspace('srgb')
     .ensureAlpha()
@@ -305,6 +321,11 @@ async function encodeImage(image: RawImage, config: CliConfig): Promise<{ data: 
 
 export async function processImageFile(inputPath: string, outputPath: string, config: CliConfig, profile: FilmProfile = resolveProfile(config.profile)): Promise<CliFileResult> {
   const warnings: string[] = [];
+  const file = await stat(inputPath);
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new Error(`File size ${file.size} bytes exceeds limit ${MAX_FILE_SIZE_BYTES} bytes.`);
+  }
+
   const decoded = await decodeImage(inputPath);
   const settings = resolveSettings(profile, config);
 
@@ -371,11 +392,11 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
   const inputPaths = await expandInputs(config.input);
   await ensureOutputDirectory(config.outputDir, config.dryRun);
 
-  const files: CliFileResult[] = [];
-  for (const inputPath of inputPaths) {
+  const files = new Array<CliFileResult>(inputPaths.length);
+  const processInput = async (inputPath: string): Promise<CliFileResult> => {
     const outputPath = createOutputPath(inputPath, config);
     if (await shouldSkipExisting(outputPath, config.overwrite)) {
-      files.push({
+      return {
         inputPath,
         outputPath,
         status: 'skipped',
@@ -385,12 +406,11 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
         outputHeight: null,
         profile: profile.id,
         warnings: ['Output exists; pass --overwrite to replace it.'],
-      });
-      continue;
+      };
     }
 
     if (config.dryRun) {
-      files.push({
+      return {
         inputPath,
         outputPath,
         status: 'pending',
@@ -400,14 +420,13 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
         outputHeight: null,
         profile: profile.id,
         warnings: [],
-      });
-      continue;
+      };
     }
 
     try {
-      files.push(await processImageFile(inputPath, outputPath, config, profile));
+      return await processImageFile(inputPath, outputPath, config, profile);
     } catch (error) {
-      files.push({
+      return {
         inputPath,
         outputPath,
         status: 'error',
@@ -418,8 +437,27 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
         profile: profile.id,
         warnings: [],
         error: error instanceof Error ? error.message : String(error),
-      });
+      };
     }
+  };
+
+  let nextIndex = 0;
+  const workerCount = Math.min(config.concurrency, inputPaths.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < inputPaths.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const inputPath = inputPaths[index];
+      if (inputPath) {
+        files[index] = await processInput(inputPath);
+      }
+    }
+  }));
+
+  const orderedFiles = files.filter((file): file is CliFileResult => file !== undefined);
+
+  if (orderedFiles.length !== inputPaths.length) {
+    throw new Error('Internal error: conversion results did not match input count.');
   }
 
   return {
@@ -428,12 +466,12 @@ export async function runConversion(config: CliConfig): Promise<CliRunSummary> {
     format: config.format,
     outputDir: path.resolve(config.outputDir),
     totals: {
-      matched: files.length,
-      done: files.filter((file) => file.status === 'done').length,
-      skipped: files.filter((file) => file.status === 'skipped' || file.status === 'pending').length,
-      failed: files.filter((file) => file.status === 'error').length,
+      matched: orderedFiles.length,
+      done: orderedFiles.filter((file) => file.status === 'done').length,
+      skipped: orderedFiles.filter((file) => file.status === 'skipped' || file.status === 'pending').length,
+      failed: orderedFiles.filter((file) => file.status === 'error').length,
     },
-    files,
+    files: orderedFiles,
   };
 }
 

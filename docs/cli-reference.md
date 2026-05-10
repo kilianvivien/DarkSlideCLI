@@ -41,6 +41,7 @@ Options:
       --overwrite              Replace existing outputs
       --dry-run                Print planned work without writing
       --json                   Print deterministic JSON summary
+      --concurrency <n>        Process up to n files at once
       --list-profiles          Print available film profiles
       --print-default-config   Print the default JSON config
 ```
@@ -98,6 +99,12 @@ Set JPEG/WebP/TIFF quality:
 
 ```bash
 npm run dev -- --input "scans/**/*.tif" --output converted --format jpeg --quality 90
+```
+
+Process up to four files at once while preserving final summary order:
+
+```bash
+npm run dev -- --input "scans/**/*.tif" --output converted --concurrency 4 --json
 ```
 
 Resize the longest output edge:
@@ -183,6 +190,8 @@ Supported output formats:
 
 `--json`: Prints one deterministic JSON summary object instead of human-readable lines.
 
+`--concurrency <n>`: Processes up to this many files at once. The value must be a positive integer. The default is `1`; final summary ordering remains sorted by input path even when processing concurrently.
+
 `--list-profiles`: Prints available film profiles and exits successfully without requiring inputs. In human mode, each line includes id, name, type, film type, category, and description. With `--json`, stdout contains a deterministic object with a `profiles` array.
 
 `--print-default-config`: Prints the default JSON config and exits successfully without requiring inputs.
@@ -202,6 +211,7 @@ Start from `darkslide.config.example.json`.
   "quality": 92,
   "maxDimension": null,
   "overwrite": false,
+  "concurrency": 1,
   "auto": {
     "filmBase": true,
     "flare": true,
@@ -228,6 +238,7 @@ Top-level fields:
 - `overwrite`: boolean. When false, existing outputs become skipped results.
 - `dryRun`: optional boolean. Same behavior as `--dry-run`.
 - `json`: optional boolean. Same behavior as `--json`.
+- `concurrency`: positive integer. Defaults to `1`.
 - `auto`: optional object controlling analysis helpers.
 - `naming`: optional object controlling output names.
 - `settings`: optional partial conversion settings object merged over the selected profile defaults.
@@ -271,6 +282,8 @@ Effective config is built in this order:
 `input` is additive: config-file inputs are kept, then CLI and positional inputs are appended. Other CLI values override config-file values when provided.
 
 For booleans, `--overwrite` sets `overwrite` to true and `--no-overwrite` sets it to false. `--dry-run` and `--json` set their fields to true; there is no current CLI flag to force either back to false when a config file sets it to true.
+
+Concurrent and sequential runs produce the same final result ordering. Failures are captured per file and do not stop unrelated files.
 
 ## Output Names
 
@@ -450,6 +463,6 @@ pending /absolute/input-03.tif -> /absolute/output/input-03-positive.jpg
 
 ## Current Boundaries
 
-The current CLI supports TIFF, JPEG, PNG, and WebP input. RAW import, sidecars, metadata embedding, advanced color-profile controls, and concurrent processing are roadmap items and are not part of the current command surface.
+The current CLI supports TIFF, JPEG, PNG, and WebP input. Before full decode, it rejects files over the current file-size limit and images whose dimensions or pixel counts exceed the vendored DarkSlide safety limits. RAW import, sidecars, metadata embedding, and advanced color-profile controls are roadmap items and are not part of the current command surface.
 
 Image-quality regression coverage and the manual comparison workflow are documented in [image-quality-baseline.md](image-quality-baseline.md).

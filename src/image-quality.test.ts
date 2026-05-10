@@ -33,6 +33,7 @@ function createQualityConfig(overrides: Partial<CliConfig>): CliConfig {
     overwrite: false,
     dryRun: false,
     json: true,
+    concurrency: 1,
     auto: {
       filmBase: false,
       flare: false,

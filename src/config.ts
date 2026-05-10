@@ -17,6 +17,7 @@ const TOP_LEVEL_CONFIG_FIELDS = new Set([
   'overwrite',
   'dryRun',
   'json',
+  'concurrency',
   'auto',
   'naming',
   'settings',
@@ -68,6 +69,7 @@ export const DEFAULT_CONFIG: CliConfig = {
   overwrite: false,
   dryRun: false,
   json: false,
+  concurrency: 1,
   auto: {
     filmBase: true,
     flare: true,
@@ -154,6 +156,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
       parsed.dryRun = true;
     } else if (arg === '--json') {
       parsed.json = true;
+    } else if (arg === '--concurrency') {
+      parsed.concurrency = parseInteger(readFlagValue(argv, index, arg), arg);
+      index += 1;
     } else if (arg === '--list-profiles') {
       parsed.listProfiles = true;
     } else if (arg === '--print-default-config') {
@@ -191,6 +196,13 @@ function validateMaxDimension(maxDimension: number | null) {
     throw new UsageError('maxDimension must be null or a positive integer.');
   }
   return maxDimension;
+}
+
+function validateConcurrency(concurrency: number) {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new UsageError('concurrency must be a positive integer.');
+  }
+  return concurrency;
 }
 
 function assertPlainObject(value: unknown, label: string): Record<string, unknown> {
@@ -407,6 +419,12 @@ function validateConfigFileShape(config: RawConfig) {
       assertBoolean(object[field], field);
     }
   }
+  if ('concurrency' in object) {
+    if (typeof object.concurrency !== 'number') {
+      throw new UsageError('concurrency must be a positive integer.');
+    }
+    validateConcurrency(object.concurrency);
+  }
   if ('auto' in object) {
     validateAutoConfig(object.auto);
   }
@@ -458,6 +476,7 @@ export async function loadCliConfig(args: ParsedArgs): Promise<CliConfig> {
     overwrite: args.overwrite ?? fileConfig.overwrite ?? DEFAULT_CONFIG.overwrite,
     dryRun: args.dryRun ?? fileConfig.dryRun ?? DEFAULT_CONFIG.dryRun,
     json: args.json ?? fileConfig.json ?? DEFAULT_CONFIG.json,
+    concurrency: validateConcurrency(args.concurrency ?? fileConfig.concurrency ?? DEFAULT_CONFIG.concurrency),
     auto: {
       ...DEFAULT_CONFIG.auto,
       ...(fileConfig.auto ?? {}),
@@ -508,6 +527,7 @@ export function getHelpText() {
     '      --overwrite              Replace existing outputs',
     '      --dry-run                Print planned work without writing',
     '      --json                   Print deterministic JSON summary',
+    '      --concurrency <n>        Process up to n files at once',
     '      --list-profiles          Print available film profiles',
     '      --print-default-config   Print the default JSON config',
   ].join('\n');

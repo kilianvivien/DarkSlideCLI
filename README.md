@@ -91,6 +91,7 @@ Start from `darkslide.config.example.json`:
   "quality": 92,
   "maxDimension": null,
   "overwrite": false,
+  "concurrency": 1,
   "auto": {
     "filmBase": true,
     "flare": true,
@@ -135,6 +136,7 @@ Options:
       --overwrite              Replace existing outputs
       --dry-run                Print planned work without writing
       --json                   Print deterministic JSON summary
+      --concurrency <n>        Process up to n files at once
       --list-profiles          Print available film profiles
       --print-default-config   Print the default JSON config
 ```
@@ -182,6 +184,8 @@ Exit codes:
 For AI agents, prefer `--dry-run --json` before large conversion jobs. It confirms input matching, output naming, skip behavior, and config validity without writing images.
 
 The config schema is published at [schemas/darkslide-config.schema.json](schemas/darkslide-config.schema.json). Available profiles can be inspected with `darkslide-convert --list-profiles --json`, and the built-in defaults can be printed with `darkslide-convert --print-default-config`.
+
+Batch conversion defaults to `concurrency: 1`. Higher concurrency preserves final JSON ordering and keeps per-file errors in the summary.
 
 ## Development
 

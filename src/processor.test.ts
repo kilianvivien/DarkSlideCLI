@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -22,6 +22,7 @@ function createTestConfig(overrides: Partial<CliConfig>): CliConfig {
     overwrite: false,
     dryRun: false,
     json: true,
+    concurrency: 1,
     auto: {
       filmBase: true,
       flare: false,
@@ -142,5 +143,90 @@ describe('processor', () => {
 
     expect(summary.files[0]?.status).toBe('pending');
     expect(summary.totals).toEqual({ matched: 1, done: 0, skipped: 1, failed: 0 });
+  });
+
+  it('keeps concurrent summary ordering deterministic', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-concurrent-'));
+    const inputs = ['c.png', 'a.png', 'b.png'];
+    await Promise.all(inputs.map((name, index) => sharp({
+      create: {
+        width: 6,
+        height: 6,
+        channels: 4,
+        background: { r: 190 + index * 10, g: 150, b: 90, alpha: 1 },
+      },
+    }).png().toFile(path.join(dir, name))));
+
+    const sequential = await runConversion(createTestConfig({
+      input: [path.join(dir, '*.png')],
+      outputDir: path.join(dir, 'out-sequential'),
+      concurrency: 1,
+    }));
+    const concurrent = await runConversion(createTestConfig({
+      input: [path.join(dir, '*.png')],
+      outputDir: path.join(dir, 'out-concurrent'),
+      concurrency: 3,
+    }));
+
+    expect(sequential.files.map((file) => path.basename(file.inputPath))).toEqual(['a.png', 'b.png', 'c.png']);
+    expect(concurrent.files.map((file) => path.basename(file.inputPath))).toEqual(['a.png', 'b.png', 'c.png']);
+    expect(concurrent.files.map((file) => file.status)).toEqual(['done', 'done', 'done']);
+  });
+
+  it('preserves partial results when one concurrent file fails', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-partial-'));
+    const goodA = path.join(dir, 'a.png');
+    const goodC = path.join(dir, 'c.png');
+    const badB = path.join(dir, 'b.png');
+    await sharp({
+      create: {
+        width: 6,
+        height: 6,
+        channels: 4,
+        background: { r: 210, g: 160, b: 90, alpha: 1 },
+      },
+    }).png().toFile(goodA);
+    await writeFile(badB, 'not an image');
+    await sharp({
+      create: {
+        width: 6,
+        height: 6,
+        channels: 4,
+        background: { r: 190, g: 150, b: 80, alpha: 1 },
+      },
+    }).png().toFile(goodC);
+
+    const summary = await runConversion(createTestConfig({
+      input: [path.join(dir, '*.png')],
+      outputDir: path.join(dir, 'out'),
+      concurrency: 2,
+    }));
+
+    expect(summary.files.map((file) => path.basename(file.inputPath))).toEqual(['a.png', 'b.png', 'c.png']);
+    expect(summary.files.map((file) => file.status)).toEqual(['done', 'error', 'done']);
+    expect(summary.totals).toEqual({ matched: 3, done: 2, skipped: 0, failed: 1 });
+    expect(summary.files[1]?.error).toBeTruthy();
+  });
+
+  it('fails oversized image dimensions before full decode', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'darkslide-cli-large-'));
+    const input = path.join(dir, 'huge.png');
+    await sharp({
+      create: {
+        width: 18001,
+        height: 1,
+        channels: 4,
+        background: { r: 200, g: 150, b: 90, alpha: 1 },
+      },
+    }).png().toFile(input);
+
+    const summary = await runConversion(createTestConfig({
+      input: [input],
+      outputDir: path.join(dir, 'out'),
+      concurrency: 2,
+    }));
+
+    expect(summary.files[0]?.status).toBe('error');
+    expect(summary.files[0]?.error).toMatch(/exceed limit/i);
   });
 });
