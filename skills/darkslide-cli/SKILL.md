@@ -1,6 +1,6 @@
 ---
 name: darkslide-cli
-description: Use this skill when an agent needs to use DarkSlide CLI or darkslide-convert for scanned film-negative conversion, batch image conversion, dry-run planning, deterministic JSON summaries, film profile discovery, config-file workflows, sidecar generation, output color profiles, or safe automation around the DarkSlide command-line tool.
+description: Use when the user wants to run DarkSlide CLI (darkslide-convert) — film-negative batch conversion, dry-run JSON planning, film profile discovery, config-file workflows, JSON sidecars, or color-managed output.
 ---
 
 # DarkSlide CLI

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DarkSlide CLI"
+  short_description: "Guide Claude Code / Cowork agents through DarkSlide CLI conversions"
+  default_prompt: "Use the darkslide-cli skill to plan and run a safe film-negative conversion. Discover profiles first, dry-run with --json, then run only after I confirm the plan."

@@ -1,11 +1,16 @@
 ---
 name: darkslide-cli
-description: Repo-local agent instructions for using DarkSlide CLI safely for film-negative batch conversion, dry-run planning, JSON summaries, config files, profiles, sidecars, and color-managed outputs.
+description: Repo-local agent instructions for running DarkSlide CLI safely — film-negative batch conversion, dry-run JSON, profiles, config files, sidecars, and color-managed output.
 ---
 
 # DarkSlide CLI Agent Skill
 
-The canonical Codex-compatible skill lives at `skills/darkslide-cli/SKILL.md`. Use that file first when your agent supports skills with `SKILL.md` frontmatter.
+Runtime-specific skills live alongside this file:
+
+- Codex / OpenAI: `skills/darkslide-cli/SKILL.md`
+- Claude Code / Cowork: `.claude/skills/darkslide-cli/SKILL.md`
+
+Use whichever matches your agent runtime first. This `.skill/SKILL.md` is the generic fallback for agents that only look for a top-level `.skill` folder.
 
 ## Quick Workflow
 

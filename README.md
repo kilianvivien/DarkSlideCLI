@@ -225,11 +225,18 @@ For AI agents, prefer `--dry-run --json` before large conversion jobs. It confir
 
 ## AI Agent Skill
 
-This repo includes ready-to-use agent skill instructions for DarkSlide CLI:
+This repo includes ready-to-use agent skill instructions for DarkSlide CLI, one per runtime:
 
-- [skills/darkslide-cli/SKILL.md](skills/darkslide-cli/SKILL.md): canonical Codex-compatible skill with frontmatter, workflow guidance, and references.
+- [skills/darkslide-cli/SKILL.md](skills/darkslide-cli/SKILL.md): Codex / OpenAI-compatible skill with frontmatter, workflow guidance, and references. Paired with [skills/darkslide-cli/agents/openai.yaml](skills/darkslide-cli/agents/openai.yaml).
+- [.claude/skills/darkslide-cli/SKILL.md](.claude/skills/darkslide-cli/SKILL.md): Claude Code / Cowork skill, auto-discovered when Claude Code runs inside this repo. Expresses the same contract using Bash, Read, and TodoWrite. Paired with [skills/darkslide-cli/agents/claude-code.yaml](skills/darkslide-cli/agents/claude-code.yaml). To use it from any directory, copy it into your user skills folder:
+
+  ```bash
+  cp -r .claude/skills/darkslide-cli ~/.claude/skills/
+  ```
+
+  Cowork picks up the same file with no extra configuration.
 - [.skill/SKILL.md](.skill/SKILL.md): generic repo-local entrypoint for agents that look for a `.skill` folder.
-- [skills/darkslide-cli/references/cli-contract.md](skills/darkslide-cli/references/cli-contract.md): detailed command, config, JSON summary, and safe-template reference.
+- [skills/darkslide-cli/references/cli-contract.md](skills/darkslide-cli/references/cli-contract.md): detailed command, config, JSON summary, and safe-template reference, shared by all skills above.
 
 Agents should discover profiles/defaults first, run `--dry-run --json` before real batch conversion, and parse the JSON summary instead of scraping human output.
 
